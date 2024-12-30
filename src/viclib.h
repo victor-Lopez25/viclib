@@ -99,8 +99,6 @@ extern void __cdecl __debugbreak(void);
 #elif defined(ANDROID)
 # include <assert.h>
 # define DebugBreak assert(0)
-#elif SDL_HAS_BUILTIN(__builtin_debugtrap)
-# define DebugBreak __builtin_debugtrap()
 #elif (defined(__GNUC__) || defined(__clang__)) && (defined(__i386__) || defined(__x86_64__))
 # define DebugBreak __asm__ __volatile__ ( "int $3\n\t" )
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__riscv)
@@ -411,7 +409,7 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, int *IdxAfterNum)
     
     s64 Value = 0;
     int i = 0;
-    for(int j = 0; j < v.Len; j++)
+    for(int j = 0; j < (int)v.Len; j++)
     {
         char c = v.Data[j];
         if(c == '_') {
