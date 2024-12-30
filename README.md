@@ -20,3 +20,5 @@ Right now, only std_ReadEntireFile sets this.
  - Mr4th's 4ed_base_types.h - https://mr-4th.itch.io/4coder (find the file in 'custom' directory)
  - stb header-only libraries - https://github.com/nothings/stb
  - tsoding's string view implementation - https://github.com/tsoding/sv
+
+You are free to change the name of the file if you modify it, just keep the license as "original viclib license by Victor Lopez:\n>mit license here<".
