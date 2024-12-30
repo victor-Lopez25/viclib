@@ -6,6 +6,4 @@ set code=%cd%\src
 set out=test.exe
 pushd bin
 gcc -Wall -Wextra %code%\test.c -o test.exe
-
-test.exe
 popd
