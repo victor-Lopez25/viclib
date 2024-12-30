@@ -203,7 +203,7 @@ VIEWPROC view view_TrimLeft(view v);
 VIEWPROC view view_TrimRight(view v);
 VIEWPROC view view_Trim(view v);
 
-VIEWPROC bool view_ParseS64(view v, s64 *Result, int *IdxAfterNum);
+VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining);
 
 typedef struct {
     view File;
@@ -368,7 +368,7 @@ int _digit_val(int c)
 // try to compile: int n = 080;
 // I checked out how Odin did octal and they do "0o" prefix, 
 // I also don't know what the "0z" prefix of base 12 is for but I'll just leave it there
-VIEWPROC bool view_ParseS64(view v, s64 *Result, int *IdxAfterNum)
+VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
 {
     AssertMsg(Result != 0, "Result parameter must be a valid pointer");
     if(v.Len == 0) return false;
@@ -429,7 +429,10 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, int *IdxAfterNum)
     
     if(Neg) Value = -Value;
     *Result = Value;
-    if(IdxAfterNum) *IdxAfterNum = (int)(IniLen - v.Len + (size_t)i);
+    if(Remaining) {
+        Remaining->Data = v.Data + IniLen - v.Len + (size_t)i;
+        Remaining->Len = v.Len - IniLen + v.Len - (size_t)i;
+    }
     
     return true;
 }

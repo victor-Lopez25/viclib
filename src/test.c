@@ -39,14 +39,11 @@ void TestParsing()
     Assert(ok);
     printf("%lld\n", Val);
     
-    // TODO: Would it be better to do this:
-    // view_ParseS64(TestStr, &Val, &TestStr)
-    // so the remaining view is put in TestStr or in a different one?
-    int n;
     TestStr = VIEW("123Hello");
-    Assert(view_ParseS64(TestStr, &Val, &n));
+    view Remaining;
+    Assert(view_ParseS64(TestStr, &Val, &Remaining));
     printf("string: \""VIEW_FMT"\" -> num: %lld, remaining: \""VIEW_FMT"\"\n",
-           VIEW_ARG(TestStr), Val, VIEW_ARG(view_FromParts(TestStr.Data + n, TestStr.Len - n)));
+           VIEW_ARG(TestStr), Val, VIEW_ARG(Remaining));
     
     TestStr = VIEW("-123");
     Assert(view_ParseS64(TestStr, &Val, 0));
@@ -89,7 +86,7 @@ void TestAll()
 
 int main()
 {
-    TestLoc();
+    TestAll();
     
     return 0;
 }
