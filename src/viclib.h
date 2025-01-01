@@ -70,6 +70,19 @@ SOFTWARE.
 # define OS_WINDOWS 1
 #endif
 
+#if defined(_MSC_VER)
+# define COMPILER_CL 1
+# define PRAGMA(x) __pragma(x)
+#elif defined(__clang__)
+# define COMPILER_CLANG 1
+# define PRAGMA(x) _Pragma(#x)
+#elif defined(__GNUC__) || defined(__GNUG__)
+# define COMPILER_GCC 1
+# define PRAGMA(x) _Pragma(#x)
+#else
+// unsupported compiler, not much issue (for now)
+#endif
+
 #if defined(__gnu_linux__)
 # define OS_LINUX 1
 #endif
@@ -119,11 +132,30 @@ extern void __cdecl __debugbreak(void);
 # define DebugBreak
 #endif
 
+#if COMPILER_GCC || COMPILER_CLANG
+# define PUSH_IGNORE_UNINITIALIZED \
+PRAGMA(GCC diagnostic push) \
+PRAGMA(GCC diagnostic ignored "-Wuninitialized")
+# define RESTORE_WARNINGS PRAGMA(GCC diagnostic pop)
+#elif COMPILER_CL
+# define PUSH_IGNORE_UNINITIALIZED \
+PRAGMA(warning(push)) \
+PRAGMA(warning(disable: 4701)) \
+PRAGMA(warning(disable: 4703))
+# define RESTORE_WARNINGS PRAGMA(warning(pop))
+#else
+// compiler specific implementation
+# define PUSH_IGNORE_UNINITIALIZED
+# define RESTORE_WARNINGS
+#endif
+
 // only works with static arrays!
 #define ArrayLen(arr) sizeof(arr)/sizeof(arr[0])
 
 #define stringify_(a) #a
 #define stringify(a) stringify_(a)
+
+#define fallthrough 
 
 #include <stdint.h>
 
@@ -191,7 +223,7 @@ typedef struct {
 # define VIEWPROC
 #endif
 
-int isspace(int _c);
+int is_space(int _c);
 VIEWPROC view view_FromParts(const char *Data, size_t Count);
 VIEWPROC view view_FromCstr(const char *Cstr);
 VIEWPROC bool view_Eq(view A, view B);
@@ -223,19 +255,44 @@ typedef struct {
 
 ////////////////////////////////
 
-#if defined(_INC_STDIO) && defined(_INC_MALLOC)
-
 // IMPORTANT: Only check ErrorNumber when return is null (0)
-#define ERROR_READ_UNKNOWN 1 // fopen, fseek, ftell failed
-#define ERROR_READ_NO_MEM 2 // malloc failed
-#define ERROR_READ_FILE_TOO_BIG 3 // READ_ENTIRE_FILE_MAX exceeded
+#define ERROR_READ_UNKNOWN 1
+#define ERROR_READ_FILE_NOT_FOUND 2
+#define ERROR_READ_ACCESS_DENIED 3
+#define ERROR_READ_NO_MEM 4
+#define ERROR_READ_FILE_TOO_BIG 5 // READ_ENTIRE_FILE_MAX exceeded
+
+#ifndef READ_ENTIRE_FILE_MAX
+#define READ_ENTIRE_FILE_MAX 0xFFFFFFFF
+#endif
+
+// char *ReadEntireFile(const char *File, size_t *Size);
+#define ReadEntireFile must_include_stdlib.h_and_stdio.h_or_windows.h_or_fileapi.h
+
+#if defined(_APISETFILE_) // windows fileapi.h included
+
+#undef ReadEntireFile
+#define ReadEntireFile win32_ReadEntireFile
+char *win32_ReadEntireFile(const char *File, size_t *Size);
+
+// windows fileapi.h included
+#elif defined(_INC_STDIO) && (defined(_INC_MALLOC) || defined(_INC_STDLIB))
+
+#undef ReadEntireFile
+#define ReadEntireFile std_ReadEntireFile
+// ERROR_READ_UNKNOWN - fopen, fseek, ftell failed
+// fopen could fail due to many things
+// TODO: Set ErrorNumber depending on them
+// ERROR_READ_NO_MEM - malloc failed
+// ERROR_READ_FILE_TOO_BIG - READ_ENTIRE_FILE_MAX exceeded
 char *std_ReadEntireFile(const char *file, size_t *size);
 
-#endif // stdio.h && malloc.h included
+#endif // stdio.h && (malloc.h || stdlib.h) included
+
 
 #ifdef VICLIB_IMPLEMENTATION
 
-int isspace(int _c)
+int is_space(int _c)
 {
     char c = (char)_c;
     return(c == ' ' || c == '\n' || c == '\t' || 
@@ -262,14 +319,14 @@ VIEWPROC view view_FromCstr(const char *Cstr)
 VIEWPROC view view_TrimLeft(view v)
 {
     size_t i = 0;
-    for(;i < v.Len && isspace(v.Data[i]);) i += 1;
+    for(;i < v.Len && is_space(v.Data[i]);) i += 1;
     
     return view_FromParts((const char*)(v.Data + i), v.Len - i);
 }
 VIEWPROC view view_TrimRight(view v)
 {
     size_t i = 0;
-    for(;i < v.Len && isspace(v.Data[v.Len - 1 - i]);) i += 1;
+    for(;i < v.Len && is_space(v.Data[v.Len - 1 - i]);) i += 1;
     
     return view_FromParts((const char*)v.Data, v.Len - i);
 }
@@ -509,14 +566,82 @@ int mem_compare(const void *str1, const void *str2, size_t count)
     return 0;
 }
 
-#if defined(_INC_STDIO) && defined(_INC_MALLOC)
+////////////////////////////////
+
+#if defined(_APISETFILE_) // windows fileapi.h included
+
+PUSH_IGNORE_UNINITIALIZED
+
+char *win32_ReadEntireFile(const char *File, size_t *Size)
+{
+    AssertMsgAlways(Size != 0, "Size parameter must not be null");
+    char *Result;
+    HANDLE FileHandle = CreateFileA(File, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    bool ok = FileHandle != INVALID_HANDLE_VALUE;
+    if(!ok) {
+        DWORD Error = GetLastError();
+        switch(Error) {
+            case ERROR_INVALID_DRIVE: fallthrough;
+            case ERROR_PATH_NOT_FOUND: fallthrough;
+            case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
+            case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_READ_ACCESS_DENIED; break;
+            
+            default: ErrorNumber = ERROR_READ_UNKNOWN; break;
+        }
+    }
+    
+    LARGE_INTEGER FileSize;
+    if(ok) {
+        ok = (bool)GetFileSizeEx(FileHandle, &FileSize);
+        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
+    }
+    
+    u64 Limit = READ_ENTIRE_FILE_MAX;
+    
+    if(ok) {
+        ok = (u64)FileSize.QuadPart <= Limit;
+        if(!ok) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+    }
+    u32 FileSizeU32 = (u32)FileSize.QuadPart;
+    
+    if(ok) {
+        // TODO: VirtualAlloc or HeapAlloc here?
+        Result = (char*)VirtualAlloc(0, FileSize.QuadPart, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+        ok = Result ? true : false;
+        if(!ok) ErrorNumber = ERROR_READ_NO_MEM;
+    }
+    
+    if(ok) {
+        DWORD BytesRead;
+        if(ReadFile(FileHandle, Result, FileSizeU32, &BytesRead, 0) && (FileSize.QuadPart == BytesRead))
+        {
+            *Size = FileSize.QuadPart;
+        }
+        else {
+            ErrorNumber = ERROR_READ_UNKNOWN;
+            VirtualFree((void*)Result, 0, MEM_RELEASE); // NOTE: If I decide to do HeapAlloc above, this should be HeapFree
+            Result = 0;
+        }
+    }
+    
+    CloseHandle(FileHandle);
+    
+    return Result;
+}
+
+RESTORE_WARNINGS
+
+#endif // windows fileapi.h included
+
+#if defined(_INC_STDIO) && (defined(_INC_MALLOC) || defined(_INC_STDLIB))
 
 char *std_ReadEntireFile(const char *file, size_t *size)
 {
+    AssertMsgAlways(size != 0, "Size parameter must not be null");
     char *buffer = 0;
     FILE *f = fopen(file, "rb");
     if(f == 0) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
+        ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
         goto std_readentirefileerror;
     }
     
@@ -526,12 +651,11 @@ char *std_ReadEntireFile(const char *file, size_t *size)
     }
     
     long m = ftell(f);
-#ifdef READ_ENTIRE_FILE_MAX
-    if(m > READ_ENTIRE_FILE_MAX) {
+    if(m > (long)READ_ENTIRE_FILE_MAX) {
         ErrorNumber = ERROR_READ_FILE_TOO_BIG;
         goto std_readentirefileerror;
     }
-#endif
+    
     if(m < 0) {
         ErrorNumber = ERROR_READ_UNKNOWN;
         goto std_readentirefileerror;
@@ -579,7 +703,7 @@ char *std_ReadEntireFile(const char *file, size_t *size)
     return NULL;
 }
 
-#endif // stdio.h && malloc.h included
+#endif // stdio.h && (malloc.h || stdlib.h) included
 
 #endif // VICLIB_IMPLEMENTATION
 #endif //VICLIB_H
