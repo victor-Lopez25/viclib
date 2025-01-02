@@ -73,14 +73,22 @@ SOFTWARE.
 #if defined(_MSC_VER)
 # define COMPILER_CL 1
 # define PRAGMA(x) __pragma(x)
+# define thread_local __declspec(thread)
 #elif defined(__clang__)
 # define COMPILER_CLANG 1
 # define PRAGMA(x) _Pragma(#x)
+# define thread_local __thread
 #elif defined(__GNUC__) || defined(__GNUG__)
 # define COMPILER_GCC 1
 # define PRAGMA(x) _Pragma(#x)
+# define thread_local __thread
 #else
-// unsupported compiler, not much issue (for now)
+/* unsupported compiler, to support, define:
+ - thread_local
+ - PUSH_IGNORE_UNINITIALIZED
+ - RESTORE_WARNINGS
+*/
+# define thread_local
 #endif
 
 #if defined(__gnu_linux__)
@@ -201,7 +209,7 @@ fflush(stdout); DebugBreak; } }while(0)
 # define AssertMsg(expr, msg) AssertMsgAlways(expr, msg)
 #endif
 
-u32 ErrorNumber = 0;
+thread_local u32 ErrorNumber = 0;
 
 ////////////////////////////////
 // intrinsics
