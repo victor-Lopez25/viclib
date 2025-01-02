@@ -9,7 +9,7 @@ RELEASE_MODE to have some stuff work faster, right now, assertions get compiled 
 
 -Check ErrorNumber when errors occur.
 WARNING I'm pretty sure doing it like this doesn't let you see what the error was when using multithreading when an error happens at the same time in different threads, but this should not happen since errors shouldn't occur 99% of the time anyway. I will however change this if I see it's not great.
-Right now, only std_ReadEntireFile sets this.
+Right now, only ReadEntireFile sets this.
 
 --Many thanks to the inspirations for this library:
 - Mr4th's 4ed_base_types.h - https://mr-4th.itch.io/4coder (find the file in 'custom' directory)
@@ -607,7 +607,7 @@ char *win32_ReadEntireFile(const char *File, size_t *Size)
     if(ok) {
         // TODO: VirtualAlloc or HeapAlloc here?
         Result = (char*)VirtualAlloc(0, FileSize.QuadPart, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-        ok = Result ? true : false;
+        ok = Result != 0;
         if(!ok) ErrorNumber = ERROR_READ_NO_MEM;
     }
     
@@ -635,73 +635,65 @@ RESTORE_WARNINGS
 
 #if defined(_INC_STDIO) && (defined(_INC_MALLOC) || defined(_INC_STDLIB))
 
+PUSH_IGNORE_UNINITIALIZED
+
 char *std_ReadEntireFile(const char *file, size_t *size)
 {
     AssertMsgAlways(size != 0, "Size parameter must not be null");
     char *buffer = 0;
     FILE *f = fopen(file, "rb");
-    if(f == 0) {
-        ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-        goto std_readentirefileerror;
+    bool ok = f != 0;
+    if(!ok) ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
+    
+    if(ok) {
+        ok = fseek(f, 0, SEEK_END) >= 0;
+        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
     
-    if(fseek(f, 0, SEEK_END) < 0) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
-        goto std_readentirefileerror;
+    long m;
+    if(ok) {
+        m = ftell(f);
+        ok = m <= (long)READ_ENTIRE_FILE_MAX;
+        if(!ok) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+        
+        ok = m >= 0;
+        // ftell() fail
+        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
     
-    long m = ftell(f);
-    if(m > (long)READ_ENTIRE_FILE_MAX) {
-        ErrorNumber = ERROR_READ_FILE_TOO_BIG;
-        goto std_readentirefileerror;
+    if(ok) {
+        buffer = malloc(sizeof(char) * m);
+        ok = buffer != 0;
+        if(!ok) ErrorNumber = ERROR_READ_NO_MEM;
     }
     
-    if(m < 0) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
-        goto std_readentirefileerror;
+    if(ok) {
+        ok = fseek(f, 0, SEEK_SET) >= 0;
+        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
     
-    buffer = malloc(sizeof(char) * m);
-    if(buffer == 0) {
-        ErrorNumber = ERROR_READ_NO_MEM;
-        goto std_readentirefileerror;
+    if(ok) {
+        size_t n = fread(buffer, 1, m, f);
+        ok = n == (size_t)m;
+        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
     
-    if(fseek(f, 0, SEEK_SET) < 0) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
-        goto std_readentirefileerror;
-    }
-    
-    size_t n = fread(buffer, 1, m, f);
-    if(n != (size_t)m) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
-        goto std_readentirefileerror;
-    }
-    
-    if(ferror(f)) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
-        goto std_readentirefileerror;
+    if(ok) {
+        ok = !ferror(f);
+        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
     
     if(size) {
-        *size = n;
+        *size = m;
     }
     
-    fclose(f);
+    if(f) fclose(f);
+    if(!ok && buffer) free(buffer);
     
     return buffer;
-    
-    std_readentirefileerror:
-    if(f) {
-        fclose(f);
-    }
-    
-    if(buffer) {
-        free(buffer);
-    }
-    
-    return NULL;
 }
+
+RESTORE_WARNINGS
 
 #endif // stdio.h && (malloc.h || stdlib.h) included
 
