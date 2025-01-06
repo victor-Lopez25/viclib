@@ -197,7 +197,7 @@ typedef double f64;
 printf(__FILE__"("stringify(__LINE__"): Assert fail: "#e)); \
 fflush(stdout); DebugBreak; } }while(0)
 # define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
-printf(__FILE__"("stringify(__LINE__"): Assert fail: " msglit)); \
+printf(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
 fflush(stdout); DebugBreak; } }while(0)
 #endif
 
@@ -278,7 +278,8 @@ typedef struct {
 #endif
 
 // char *ReadEntireFile(const char *File, size_t *Size);
-#define ReadEntireFile must_include_stdlib.h_and_stdio.h_or_windows.h_or_fileapi.h
+#define ReadEntireFile(A, B) (char*)0; (void)B; \
+AssertMsgAlways(false, "To use 'ReadEntireFile' you must include both stdlib.h and stdio.h or either windows.h or fileapi.h (windows api)")
 
 #if defined(_APISETFILE_) // windows fileapi.h included
 
@@ -299,7 +300,6 @@ char *win32_ReadEntireFile(const char *File, size_t *Size);
 char *std_ReadEntireFile(const char *file, size_t *size);
 
 #endif // stdio.h && (malloc.h || stdlib.h) included
-
 
 #ifdef VICLIB_IMPLEMENTATION
 
@@ -585,7 +585,7 @@ PUSH_IGNORE_UNINITIALIZED
 
 char *win32_ReadEntireFile(const char *File, size_t *Size)
 {
-    AssertMsgAlways(Size != 0, "Size parameter must not be null");
+    AssertMsg(Size != 0, "Size parameter must be a valid pointer");
     char *Result;
     HANDLE FileHandle = CreateFileA(File, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
     bool ok = FileHandle != INVALID_HANDLE_VALUE;
@@ -642,15 +642,14 @@ char *win32_ReadEntireFile(const char *File, size_t *Size)
 
 RESTORE_WARNINGS
 
-#endif // windows fileapi.h included
-
-#if defined(_INC_STDIO) && (defined(_INC_MALLOC) || defined(_INC_STDLIB))
+// windows fileapi.h included
+#elif defined(_INC_STDIO) && (defined(_INC_MALLOC) || defined(_INC_STDLIB))
 
 PUSH_IGNORE_UNINITIALIZED
 
 char *std_ReadEntireFile(const char *file, size_t *size)
 {
-    AssertMsgAlways(size != 0, "Size parameter must not be null");
+    AssertMsg(size != 0, "Size parameter must not be a valid pointer");
     char *buffer = 0;
     FILE *f = fopen(file, "rb");
     bool ok = f != 0;
