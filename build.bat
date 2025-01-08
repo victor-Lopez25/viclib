@@ -9,7 +9,12 @@ IF NOT EXIST bin mkdir bin
 pushd bin
 cl %defines% %opts% %code%\test.c -Fetest.exe /link -incremental:no -opt:ref
 cl %defines% %opts% %code%\test_windows.c -Fetest_windows.exe /link -incremental:no -opt:ref kernel32.lib
+cl %defines% %opts% %code%\test_mem.c -Fetest_mem.exe /link -incremental:no -opt:ref
+
+::cl %defines% %opts% %code%\macro_test.c -Femacro_test.exe /link -incremental:no -opt:ref
+::macro_test.exe
 
 ::test.exe
 ::test_windows.exe
+::test_mem.exe
 popd

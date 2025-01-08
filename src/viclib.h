@@ -137,7 +137,7 @@ extern void __cdecl __debugbreak(void);
 # define DebugBreak raise(SIGTRAP)
 #else
 /* How do we trigger breakpoints on this platform? */
-# define DebugBreak
+# define DebugBreak Assert(false)
 #endif
 
 #if COMPILER_GCC || COMPILER_CLANG
@@ -168,6 +168,9 @@ PRAGMA(warning(disable: 4703))
 
 #define fallthrough 
 
+// If one parameter was passed, it will select the first
+#define SELECT_PROC2(_1, _2, NAME) NAME
+
 #include <stdint.h>
 
 typedef uint8_t  u8;
@@ -194,7 +197,7 @@ typedef double f64;
 # define AssertMsgAlways(e, msg) AssertAlways(e)
 #else
 # define AssertAlways(e) do{ if(!(e)){ \
-printf(__FILE__"("stringify(__LINE__"): Assert fail: "#e)); \
+printf(__FILE__"("stringify(__LINE__)"): Assert fail: "#e); \
 fflush(stdout); DebugBreak; } }while(0)
 # define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
 printf(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
@@ -216,6 +219,7 @@ thread_local u32 ErrorNumber = 0;
 ////////////////////////////////
 
 void mem_copy_non_overlapping(void *dst, const void *src, size_t len);
+#define ZeroStruct(S) mem_zero(&(S), sizeof(S))
 void mem_zero(void *data, size_t len);
 int mem_compare(const void *str1, const void *str2, size_t count);
 
@@ -266,6 +270,39 @@ typedef struct {
 
 ////////////////////////////////
 
+typedef struct {
+    size_t Size;
+    u8 *Base;
+    size_t Used;
+    
+    s32 ScratchCount;
+} memory_arena;
+
+typedef struct {
+    memory_arena *Arena;
+    size_t StartMemOffset;
+} scratch_arena;
+
+#ifndef ARENAPROC
+#define ARENAPROC
+#endif
+
+ARENAPROC void ArenaInit(memory_arena *Arena, size_t Size, void *Base);
+#define ArenaGetRemaining(Arena, ...) SELECT_PROC2(## __VA_ARGS__, ArenaGetRemaining_align, ArenaGetRemaining_default)((Arena), ## __VA_ARGS__)
+#define PushStruct(Arena, type, ...) (type*)SELECT_PROC2(## __VA_ARGS__, ArenaPushSize_align, ArenaPushSize_default)(Arena, sizeof(type), ## __VA_ARGS__)
+#define PushArray(Arena, Count, type, ...) (type*)SELECT_PROC2(## __VA_ARGS__, ArenaPushSize_align, ArenaPushSize_default)(Arena, Count*sizeof(type), ## __VA_ARGS__)
+ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena);
+ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem);
+#define ArenaClear(Arena, ZeroMem) if(ZeroMem) {mem_zero((Arena)->Base, (Arena)->Size);} (Arena)->Used = 0
+
+ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment);
+ARENAPROC size_t ArenaGetRemaining_default(memory_arena *Arena); // default align = 4
+ARENAPROC size_t ArenaGetRemaining_align(memory_arena *Arena, size_t Alignment);
+ARENAPROC void *ArenaPushSize_default(memory_arena *Arena, size_t Size);
+ARENAPROC void *ArenaPushSize_align(memory_arena *Arena, size_t Size, size_t Alignment);
+
+////////////////////////////////
+
 // IMPORTANT: Only check ErrorNumber when return is null (0)
 #define ERROR_READ_UNKNOWN 1
 #define ERROR_READ_FILE_NOT_FOUND 2
@@ -300,6 +337,8 @@ char *win32_ReadEntireFile(const char *File, size_t *Size);
 char *std_ReadEntireFile(const char *file, size_t *size);
 
 #endif // stdio.h && (malloc.h || stdlib.h) included
+
+
 
 #ifdef VICLIB_IMPLEMENTATION
 
@@ -579,6 +618,87 @@ int mem_compare(const void *str1, const void *str2, size_t count)
 
 ////////////////////////////////
 
+ARENAPROC void ArenaInit(memory_arena *Arena, size_t Size, void *Base)
+{
+    Arena->Used = 0;
+    Arena->Size = Size;
+    Arena->Base = (u8*)Base;
+    Arena->ScratchCount = 0;
+}
+
+ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment)
+{
+    size_t AlignOffset = 0;
+    size_t CurrentMemLoc = (size_t)Arena->Base + Arena->Used;
+    size_t AlignMask = Alignment - 1;
+    if(CurrentMemLoc & AlignMask) {
+        AlignOffset = Alignment - (CurrentMemLoc & AlignMask);
+    }
+    return AlignOffset;
+}
+
+ARENAPROC size_t ArenaGetRemaining_default(memory_arena *Arena)
+{
+    size_t Result = Arena->Size - (Arena->Used + ArenaGetAlignmentOffset(Arena, 4));
+    return Result;
+}
+ARENAPROC size_t ArenaGetRemaining_align(memory_arena *Arena, size_t Alignment)
+{
+    size_t Result = Arena->Size - (Arena->Used + ArenaGetAlignmentOffset(Arena, Alignment));
+    return Result;
+}
+
+ARENAPROC void *ArenaPushSize_default(memory_arena *Arena, size_t RequestSize)
+{
+    // default alignment of 4
+    size_t Size = RequestSize;
+    size_t AlignOffset = ArenaGetAlignmentOffset(Arena, 4);
+    Size += AlignOffset;
+    
+    AssertMsg((Arena->Used + Size) <= Arena->Size, "Assert Fail: Full arena size reached");
+    void *Mem = Arena->Base + Arena->Used + AlignOffset;
+    Arena->Used += Size;
+    
+    return Mem;
+}
+ARENAPROC void *ArenaPushSize_align(memory_arena *Arena, size_t RequestSize, size_t Alignment)
+{
+    size_t Size = RequestSize;
+    size_t AlignOffset = ArenaGetAlignmentOffset(Arena, Alignment);
+    Size += AlignOffset;
+    
+    AssertMsg((Arena->Used + Size) <= Arena->Size, "Assert Fail: Full arena size reached");
+    void *Mem = Arena->Base + Arena->Used + AlignOffset;
+    Arena->Used += Size;
+    
+    return Mem;
+}
+
+ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena)
+{
+    scratch_arena Scratch = {
+        .Arena = Arena,
+        .StartMemOffset = Arena->Used,
+    };
+    Arena->ScratchCount += 1;
+    
+    return Scratch;
+}
+
+ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem)
+{
+    memory_arena *Arena = Scratch.Arena;
+    Assert(Arena->Used >= Scratch.StartMemOffset);
+    if(ZeroMem) {
+        mem_zero(Arena->Base + Scratch.StartMemOffset, Arena->Used - Scratch.StartMemOffset);
+    }
+    Arena->Used = Scratch.StartMemOffset;
+    Assert(Arena->ScratchCount > 0);
+    Arena->ScratchCount -= 1;
+}
+
+////////////////////////////////
+
 #if defined(_APISETFILE_) // windows fileapi.h included
 
 PUSH_IGNORE_UNINITIALIZED
@@ -663,7 +783,7 @@ char *std_ReadEntireFile(const char *file, size_t *size)
     long m;
     if(ok) {
         m = ftell(f);
-        ok = m <= (long)READ_ENTIRE_FILE_MAX;
+        ok = (u64)m <= (u64)READ_ENTIRE_FILE_MAX;
         if(!ok) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
         
         ok = m >= 0;
