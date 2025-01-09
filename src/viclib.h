@@ -75,8 +75,9 @@ SOFTWARE.
 # define PRAGMA(x) __pragma(x)
 # define thread_local __declspec(thread)
 # if !defined(_MSVC_TRADITIONAL) || _MSVC_TRADITIONAL
-#  error Please use the compatible preprocessor for msvc
-#  error To use the compatible preprocessor, pass /Zc:preprocessor to msvc
+static_assert(0, "\nPlease use the compatible preprocessor for msvc\n"
+              "To use it, pass /Zc:preprocessor to msvc\n");
+#  error (This error is so the error messages stop here)
 # endif
 #elif defined(__clang__)
 # define COMPILER_CLANG 1
@@ -172,6 +173,7 @@ PRAGMA(warning(disable: 4703))
 
 #define fallthrough 
 
+// Thanks Martins for the help with this!
 // If one parameter was passed, it will select the first
 #define SELECT_PROC_1DEFAULT_(_1, _2, NAME, ...) NAME
 #define SELECT_PROC_1DEFAULT(A, B, ...) SELECT_PROC_1DEFAULT_(dummy, ##__VA_ARGS__, A, B)
