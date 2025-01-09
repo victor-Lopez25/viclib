@@ -74,6 +74,10 @@ SOFTWARE.
 # define COMPILER_CL 1
 # define PRAGMA(x) __pragma(x)
 # define thread_local __declspec(thread)
+# if !defined(_MSVC_TRADITIONAL) || _MSVC_TRADITIONAL
+#  error Please use the compatible preprocessor for msvc
+#  error To use the compatible preprocessor, pass /Zc:preprocessor to msvc
+# endif
 #elif defined(__clang__)
 # define COMPILER_CLANG 1
 # define PRAGMA(x) _Pragma(#x)
@@ -169,7 +173,8 @@ PRAGMA(warning(disable: 4703))
 #define fallthrough 
 
 // If one parameter was passed, it will select the first
-#define SELECT_PROC2(_1, _2, NAME) NAME
+#define SELECT_PROC_1DEFAULT_(_1, _2, NAME, ...) NAME
+#define SELECT_PROC_1DEFAULT(A, B, ...) SELECT_PROC_1DEFAULT_(dummy, ##__VA_ARGS__, A, B)
 
 #include <stdint.h>
 
@@ -288,18 +293,21 @@ typedef struct {
 #endif
 
 ARENAPROC void ArenaInit(memory_arena *Arena, size_t Size, void *Base);
-#define ArenaGetRemaining(Arena, ...) SELECT_PROC2(## __VA_ARGS__, ArenaGetRemaining_align, ArenaGetRemaining_default)((Arena), ## __VA_ARGS__)
-#define PushStruct(Arena, type, ...) (type*)SELECT_PROC2(## __VA_ARGS__, ArenaPushSize_align, ArenaPushSize_default)(Arena, sizeof(type), ## __VA_ARGS__)
-#define PushArray(Arena, Count, type, ...) (type*)SELECT_PROC2(## __VA_ARGS__, ArenaPushSize_align, ArenaPushSize_default)(Arena, Count*sizeof(type), ## __VA_ARGS__)
+#define ArenaGetRemaining(Arena, ...) \
+SELECT_PROC_1DEFAULT(ArenaGetRemaining_align, ArenaGetRemaining_default, ##__VA_ARGS__)((Arena), ## __VA_ARGS__)
+#define PushStruct(Arena, type, ...) (type*) \
+SELECT_PROC_1DEFAULT(ArenaPushSize_align, ArenaPushSize_default, ##__VA_ARGS__)((Arena), sizeof(type), ## __VA_ARGS__)
+#define PushArray(Arena, Count, type, ...) (type*) \
+SELECT_PROC_1DEFAULT(ArenaPushSize_align, ArenaPushSize_default, ##__VA_ARGS__)((Arena), (Count)*sizeof(type), ## __VA_ARGS__)
 ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena);
 ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem);
 #define ArenaClear(Arena, ZeroMem) if(ZeroMem) {mem_zero((Arena)->Base, (Arena)->Size);} (Arena)->Used = 0
 
 ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment);
-ARENAPROC size_t ArenaGetRemaining_default(memory_arena *Arena); // default align = 4
 ARENAPROC size_t ArenaGetRemaining_align(memory_arena *Arena, size_t Alignment);
-ARENAPROC void *ArenaPushSize_default(memory_arena *Arena, size_t Size);
-ARENAPROC void *ArenaPushSize_align(memory_arena *Arena, size_t Size, size_t Alignment);
+
+#define ArenaGetRemaining_default(Arena) ArenaGetRemaining_align((Arena), 4)
+#define ArenaPushSize_default(Arena, Size) ArenaPushSize_align((Arena), Size, 4)
 
 ////////////////////////////////
 
@@ -637,30 +645,12 @@ ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment)
     return AlignOffset;
 }
 
-ARENAPROC size_t ArenaGetRemaining_default(memory_arena *Arena)
-{
-    size_t Result = Arena->Size - (Arena->Used + ArenaGetAlignmentOffset(Arena, 4));
-    return Result;
-}
 ARENAPROC size_t ArenaGetRemaining_align(memory_arena *Arena, size_t Alignment)
 {
     size_t Result = Arena->Size - (Arena->Used + ArenaGetAlignmentOffset(Arena, Alignment));
     return Result;
 }
 
-ARENAPROC void *ArenaPushSize_default(memory_arena *Arena, size_t RequestSize)
-{
-    // default alignment of 4
-    size_t Size = RequestSize;
-    size_t AlignOffset = ArenaGetAlignmentOffset(Arena, 4);
-    Size += AlignOffset;
-    
-    AssertMsg((Arena->Used + Size) <= Arena->Size, "Assert Fail: Full arena size reached");
-    void *Mem = Arena->Base + Arena->Used + AlignOffset;
-    Arena->Used += Size;
-    
-    return Mem;
-}
 ARENAPROC void *ArenaPushSize_align(memory_arena *Arena, size_t RequestSize, size_t Alignment)
 {
     size_t Size = RequestSize;
