@@ -108,12 +108,10 @@ static_assert(0, "\nPlease use the compatible preprocessor for msvc\n"
 # define __COLUMN__ 0
 #endif
 
-#if defined(__func__)
-# define __PROC__ __func__
-#elif defined(__FUNCTION__)
+#if COMPILER_CL || COMPILER_GCC || COMPILER_CLANG
+/* gcc and clang define __FUNCTION__ as a string constant,
+ which means it cannot be concatenated to a string literal at compile time */
 # define __PROC__ __FUNCTION__
-#else
-# define __PROC__ ""
 #endif
 
 /* DebugBreak for different platforms.
