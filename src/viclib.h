@@ -127,9 +127,9 @@ extern void __cdecl __debugbreak(void);
 # define DebugBreak __asm__ __volatile__ ( "int $3\n\t" )
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__riscv)
 # define DebugBreak __asm__ __volatile__ ( "ebreak\n\t" )
-#elif ( defined(SDL_PLATFORM_APPLE) && (defined(__arm64__) || defined(__aarch64__)) )  /* this might work on other ARM targets, but this is a known quantity... */
+#elif (defined(OS_MAC) && (defined(__arm64__) || defined(__aarch64__)) )  /* this might work on other ARM targets, but this is a known quantity... */
 # define DebugBreak __asm__ __volatile__ ( "brk #22\n\t" )
-#elif defined(SDL_PLATFORM_APPLE) && defined(__arm__)
+#elif defined(OS_MAC) && defined(__arm__)
 # define DebugBreak __asm__ __volatile__ ( "bkpt #22\n\t" )
 #elif defined(_WIN32) && ((defined(__GNUC__) || defined(__clang__)) && (defined(__arm64__) || defined(__aarch64__)) )
 # define DebugBreak __asm__ __volatile__ ( "brk #0xF000\n\t" )
