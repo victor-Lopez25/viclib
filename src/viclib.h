@@ -519,6 +519,8 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
         }
     }
     
+    if(*v.Data > '9' || *v.Data < '0') return false;
+    
     s64 Value = 0;
     int i = 0;
     for(int j = 0; j < (int)v.Len; j++)
