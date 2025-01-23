@@ -605,7 +605,6 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
     
     if(Neg) Val = -Val;
     *Result = Val;
-    printf("%lf\n", Val);
     if(Remaining) {
         Remaining->Data = v.Data + (size_t)j;
         Remaining->Len = v.Len - (size_t)j;
