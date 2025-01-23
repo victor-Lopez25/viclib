@@ -2,6 +2,11 @@
 
 Header-only library which does some basic stuff you might want in a lot of programs
 
+To download the header only:
+```console
+wget -O viclib.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/src/viclib.h
+```
+
 ## Usage:
 ### Defines
 
