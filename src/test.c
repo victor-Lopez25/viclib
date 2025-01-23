@@ -39,7 +39,7 @@ void TestParsing()
     Assert(ok);
     printf("%lld\n", Val);
     
-    TestStr = VIEW("123Hello");
+    TestStr = VIEW("+123Hello");
     view Remaining;
     Assert(view_ParseS64(TestStr, &Val, &Remaining));
     printf("string: \""VIEW_FMT"\" -> num: %lld, remaining: \""VIEW_FMT"\"\n",
@@ -63,6 +63,15 @@ void TestParsing()
     TestStr = VIEW("-0d1234");
     Assert(view_ParseS64(TestStr, &Val, 0));
     printf("%lld\n", Val);
+    
+    f64 F64Val;
+    TestStr = VIEW("2.71828");
+    Assert(view_ParseF64(TestStr, &F64Val, 0) == PARSE_OK);
+    printf("%lf\n", F64Val);
+    
+    TestStr = VIEW_STATIC("-.135hello");
+    Assert(view_ParseF64(TestStr, &F64Val, &TestStr) == PARSE_OK);
+    printf("val: %lf, rem: "VIEW_FMT"\n", F64Val, VIEW_ARG(TestStr));
 }
 
 void TestLoc()

@@ -252,7 +252,11 @@ VIEWPROC view view_TrimLeft(view v);
 VIEWPROC view view_TrimRight(view v);
 VIEWPROC view view_Trim(view v);
 
+#define PARSE_FAIL 0
+#define PARSE_NO_DECIMALS 1
+#define PARSE_OK 2
 VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining);
+VIEWPROC int view_ParseF64(view v, f64 *Result, view *Remaining);
 
 typedef struct {
     view File;
@@ -475,16 +479,14 @@ int _digit_val(int c)
     return v;
 }
 
-// NOTE: If I ever require using octal like in C,
-// '0' is the prefix for octal, surprisingly, so '080' is an invalid number
+// '0' is the prefix for octal in C, surprisingly, so '080' is an invalid number
 // try to compile: int n = 080;
-// I checked out how Odin did octal and they do "0o" prefix, 
+// I checked out how Odin did octal and they do "0o" prefix, seemed more logical.
 // I also don't know what the "0z" prefix of base 12 is for but I'll just leave it there
 VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
 {
     AssertMsg(Result != 0, "Result parameter must be a valid pointer");
     if(v.Len == 0) return false;
-    size_t IniLen = v.Len;
     
     bool Neg = false;
     if(v.Len > 1) {
@@ -522,33 +524,93 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
     if(*v.Data > '9' || *v.Data < '0') return false;
     
     s64 Value = 0;
-    int i = 0;
-    for(int j = 0; j < (int)v.Len; j++)
+    int j = 0;
+    for(; j < (int)v.Len; j++)
     {
         char c = v.Data[j];
-        if(c == '_') {
-            i++;
-            continue;
+        if(c != '_') {
+            s64 Digit = (s64)_digit_val((int)c);
+            if(Digit >= Base) {
+                // invalid digit
+                break;
+            }
+            Value *= Base;
+            Value += Digit;
         }
-        
-        s64 Digit = (s64)_digit_val((int)c);
-        if(Digit >= Base) {
-            // invalid digit
-            break;
-        }
-        Value *= Base;
-        Value += Digit;
-        i++;
     }
     
     if(Neg) Value = -Value;
     *Result = Value;
     if(Remaining) {
-        Remaining->Data = v.Data + IniLen - v.Len + (size_t)i;
-        Remaining->Len = v.Len - IniLen + v.Len - (size_t)i;
+        Remaining->Data = v.Data + (size_t)j;
+        Remaining->Len = v.Len - (size_t)j;
     }
     
     return true;
+}
+
+int view_ParseF64(view v, f64 *Result, view *Remaining)
+{
+    AssertMsg(Result != 0, "Result parameter must be a valid pointer");
+    if(v.Len == 0) return PARSE_FAIL;
+    bool DecimalPart = false;
+    
+    bool Neg = false;
+    if(v.Len > 1) {
+        if(v.Data[0] == '-') {
+            Neg = true;
+            v.Data++;
+            v.Len--;
+        }
+        else if(v.Data[0] == '+') {
+            v.Data++;
+            v.Len--;
+        }
+    }
+    
+    if(v.Len > 1 && v.Data[0] == '.') {
+        DecimalPart = true;
+        v.Data++;
+        v.Len--;
+    }
+    
+    if(*v.Data > '9' || *v.Data < '0') return PARSE_FAIL;
+    
+    double Val = 0.0;
+    double Multiplier = 1.0;
+    
+    int j = 0;
+    for(; j < (int)v.Len; j++)
+    {
+        char c = v.Data[j];
+        if(c == '.') {
+            DecimalPart = true;
+            if(j+1 < (int)v.Len && v.Data[j+1] == '.') {
+                return PARSE_NO_DECIMALS;
+            }
+        }
+        else if(c > '9' || c < '0') {
+            // found non numeric character
+            break;
+        }
+        else if(DecimalPart) {
+            Multiplier *= 0.1;
+            Val += (v.Data[j] - '0')*Multiplier;
+        }
+        else {
+            Val *= 10.0;
+            Val += v.Data[j] - '0';
+        }
+    }
+    
+    if(Neg) Val = -Val;
+    *Result = Val;
+    printf("%lf\n", Val);
+    if(Remaining) {
+        Remaining->Data = v.Data + (size_t)j;
+        Remaining->Len = v.Len - (size_t)j;
+    }
+    return PARSE_OK;
 }
 
 ////////////////////////////////
