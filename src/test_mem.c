@@ -78,5 +78,7 @@ int main()
     printf("remaining size after scratch ended: %d\n", (int)EndSize);
     Assert(OriginalSize == EndSize);
     
+    free(Mem);
+    
     return 0;
 }

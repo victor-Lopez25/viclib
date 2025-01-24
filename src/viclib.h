@@ -86,7 +86,9 @@ static_assert(0, "\nPlease use the compatible preprocessor for msvc\n"
 # define thread_local __thread
 #else
 /* unsupported compiler, to support, define:
+ necessary:
  - thread_local
+ useful:
  - PUSH_IGNORE_UNINITIALIZED
  - RESTORE_WARNINGS
 */
@@ -166,7 +168,7 @@ PRAGMA(warning(disable: 4703))
 #define stringify_(a) #a
 #define stringify(a) stringify_(a)
 
-#define fallthrough 
+#define fallthrough
 
 // Thanks Martins for the help with this!
 // If one parameter was passed, it will select the first
@@ -199,7 +201,7 @@ typedef double f64;
 # define AssertMsgAlways(e, msg) AssertAlways(e)
 #else
 # define AssertAlways(e) do{ if(!(e)){ \
-printf(__FILE__"("stringify(__LINE__)"): Assert fail: "#e); \
+printf(__FILE__"("stringify(__LINE__)"): Assert fail: "#e "\n"); \
 fflush(stdout); DebugBreak; } }while(0)
 # define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
 printf(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
@@ -253,7 +255,7 @@ VIEWPROC view view_TrimRight(view v);
 VIEWPROC view view_Trim(view v);
 
 #define PARSE_FAIL 0
-#define PARSE_NO_DECIMALS 1
+#define PARSE_NO_DECIMALS 1 // for when you might want integer precision
 #define PARSE_OK 2
 VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining);
 VIEWPROC int view_ParseF64(view v, f64 *Result, view *Remaining);
@@ -354,7 +356,7 @@ char *std_ReadEntireFile(const char *file, size_t *size);
 int is_space(int _c)
 {
     char c = (char)_c;
-    return(c == ' ' || c == '\n' || c == '\t' || 
+    return(c == ' ' || c == '\n' || c == '\t' ||
            c == '\v' || c == '\f' || c == '\r');
 }
 
@@ -521,7 +523,8 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
         }
     }
     
-    if(*v.Data > '9' || *v.Data < '0') return false;
+    int Digit = _digit_val((int)v.Data[0]);
+    if(Digit >= Base) return false;
     
     s64 Value = 0;
     int j = 0;
@@ -529,7 +532,7 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
     {
         char c = v.Data[j];
         if(c != '_') {
-            s64 Digit = (s64)_digit_val((int)c);
+            Digit = _digit_val((int)c);
             if(Digit >= Base) {
                 // invalid digit
                 break;
@@ -588,6 +591,61 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             if(j+1 < (int)v.Len && v.Data[j+1] == '.') {
                 return PARSE_NO_DECIMALS;
             }
+        }
+        else if(c == 'e' || c == 'E') {
+            // Try to parse exponent
+            // Not sure how I feel about this, there probably is a better way to do this
+            view ExponentStr = {v.Data + j + 1, v.Len - j - 1};
+            
+            bool Prefixed = false;
+            bool ExpNeg = false;
+            if(ExponentStr.Len > 1) {
+                if(ExponentStr.Data[0] == '-') {
+                    Prefixed = true;
+                    ExpNeg = true;
+                    ExponentStr.Data++;
+                    ExponentStr.Len--;
+                }
+                else if(ExponentStr.Data[0] == '+') {
+                    Prefixed = true;
+                    ExponentStr.Data++;
+                    ExponentStr.Len--;
+                }
+            }
+            
+            if(*ExponentStr.Data > '9' || *ExponentStr.Data < '0') break;
+            
+            int ExpEnd = 0;
+            for(; ExpEnd < ExponentStr.Len; ExpEnd++)
+            {
+                if(ExponentStr.Data[ExpEnd] > '9' || ExponentStr.Data[ExpEnd] < '0') break;
+            }
+            
+            double ExpMultiplier = 10.0;
+            int charVal = ExponentStr.Data[ExpEnd - 1] - '0';
+            if(ExpNeg) {
+                for(int k = 0; k < charVal; k++) Val /= ExpMultiplier;
+                ExpMultiplier = 10000000000.0;
+                for(int k = ExpEnd - 2; k >= 0; k--)
+                {
+                    charVal = ExponentStr.Data[k] - '0';
+                    for(int l = 0; l < charVal; l++) Val /= ExpMultiplier;
+                    ExpMultiplier *= 10000000000.0;
+                }
+            }
+            else {
+                for(int k = 0; k < charVal; k++) Val *= ExpMultiplier;
+                ExpMultiplier = 10000000000.0;
+                for(int k = ExpEnd - 2; k >= 0; k--)
+                {
+                    charVal = ExponentStr.Data[k] - '0';
+                    for(int l = 0; l < charVal; l++) Val *= ExpMultiplier;
+                    ExpMultiplier *= 10000000000.0;
+                }
+            }
+            
+            j += 1 + ExpEnd + (int)Prefixed;
+            break;
         }
         else if(c > '9' || c < '0') {
             // found non numeric character

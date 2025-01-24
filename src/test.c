@@ -69,7 +69,11 @@ void TestParsing()
     Assert(view_ParseF64(TestStr, &F64Val, 0) == PARSE_OK);
     printf("%lf\n", F64Val);
     
-    TestStr = VIEW_STATIC("-.135hello");
+    TestStr = VIEW("-.135hello");
+    Assert(view_ParseF64(TestStr, &F64Val, &TestStr) == PARSE_OK);
+    printf("val: %lf, rem: "VIEW_FMT"\n", F64Val, VIEW_ARG(TestStr));
+    
+    TestStr = VIEW("1.32e+4hello");
     Assert(view_ParseF64(TestStr, &F64Val, &TestStr) == PARSE_OK);
     printf("val: %lf, rem: "VIEW_FMT"\n", F64Val, VIEW_ARG(TestStr));
 }
