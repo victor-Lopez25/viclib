@@ -591,7 +591,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
         if(c == '.') {
             DecimalPart = true;
             if(j+1 < (int)v.Len && (v.Data[j+1] > '9' || v.Data[j+1] < '0')) {
-                return PARSE_NO_DECIMALS;
+                break;
             }
         }
         else if(c == 'e' || c == 'E') {
