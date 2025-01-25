@@ -582,21 +582,23 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
     double Val = 0.0;
     double Multiplier = 1.0;
     
+    view ExponentStr = {0, 0};
+
     int j = 0;
     for(; j < (int)v.Len; j++)
     {
         char c = v.Data[j];
         if(c == '.') {
             DecimalPart = true;
-            if(j+1 < (int)v.Len && v.Data[j+1] == '.') {
+            if(j+1 < (int)v.Len && (v.Data[j+1] > '9' || v.Data[j+1] < '0')) {
                 return PARSE_NO_DECIMALS;
             }
         }
         else if(c == 'e' || c == 'E') {
             // Try to parse exponent
             // Not sure how I feel about this, there probably is a better way to do this
-            view ExponentStr = {v.Data + j + 1, v.Len - j - 1};
-            
+            ExponentStr = view_FromParts(v.Data + j + 1, v.Len - j - 1);
+
             bool Prefixed = false;
             bool ExpNeg = false;
             if(ExponentStr.Len > 1) {
@@ -612,15 +614,15 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
                     ExponentStr.Len--;
                 }
             }
-            
+
             if(*ExponentStr.Data > '9' || *ExponentStr.Data < '0') break;
-            
+
             int ExpEnd = 0;
             for(; ExpEnd < ExponentStr.Len; ExpEnd++)
             {
                 if(ExponentStr.Data[ExpEnd] > '9' || ExponentStr.Data[ExpEnd] < '0') break;
             }
-            
+
             double ExpMultiplier = 10.0;
             int charVal = ExponentStr.Data[ExpEnd - 1] - '0';
             if(ExpNeg) {
@@ -643,7 +645,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
                     ExpMultiplier *= 10000000000.0;
                 }
             }
-            
+
             j += 1 + ExpEnd + (int)Prefixed;
             break;
         }
@@ -660,14 +662,14 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             Val += v.Data[j] - '0';
         }
     }
-    
+
     if(Neg) Val = -Val;
     *Result = Val;
     if(Remaining) {
         Remaining->Data = v.Data + (size_t)j;
         Remaining->Len = v.Len - (size_t)j;
     }
-    return PARSE_OK;
+    return (DecimalPart || ExponentStr.Data) ? PARSE_OK : PARSE_NO_DECIMALS;
 }
 
 ////////////////////////////////
