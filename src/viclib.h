@@ -113,33 +113,33 @@ static_assert(0, "\nPlease use the compatible preprocessor for msvc\n"
 # define __PROC__ __FUNCTION__
 #endif
 
-/* DebugBreak for different platforms.
+/* DebugBreakpoint for different platforms.
 Implementation by SDL3 (sdl wiki says SDL2 also had this but code says since SDL3.1.3) */
 #if defined(_MSC_VER)
 /* Don't include intrin.h here because it contains C++ code */
 extern void __cdecl __debugbreak(void);
-# define DebugBreak __debugbreak()
+# define DebugBreakpoint __debugbreak()
 #elif defined(ANDROID)
 # include <assert.h>
-# define DebugBreak assert(0)
+# define DebugBreakpoint assert(0)
 #elif (defined(__GNUC__) || defined(__clang__)) && (defined(__i386__) || defined(__x86_64__))
-# define DebugBreak __asm__ __volatile__ ( "int $3\n\t" )
+# define DebugBreakpoint __asm__ __volatile__ ( "int $3\n\t" )
 #elif (defined(__GNUC__) || defined(__clang__)) && defined(__riscv)
-# define DebugBreak __asm__ __volatile__ ( "ebreak\n\t" )
+# define DebugBreakpoint __asm__ __volatile__ ( "ebreak\n\t" )
 #elif (defined(OS_MAC) && (defined(__arm64__) || defined(__aarch64__)) )  /* this might work on other ARM targets, but this is a known quantity... */
-# define DebugBreak __asm__ __volatile__ ( "brk #22\n\t" )
+# define DebugBreakpoint __asm__ __volatile__ ( "brk #22\n\t" )
 #elif defined(OS_MAC) && defined(__arm__)
-# define DebugBreak __asm__ __volatile__ ( "bkpt #22\n\t" )
+# define DebugBreakpoint __asm__ __volatile__ ( "bkpt #22\n\t" )
 #elif defined(_WIN32) && ((defined(__GNUC__) || defined(__clang__)) && (defined(__arm64__) || defined(__aarch64__)) )
-# define DebugBreak __asm__ __volatile__ ( "brk #0xF000\n\t" )
+# define DebugBreakpoint __asm__ __volatile__ ( "brk #0xF000\n\t" )
 #elif defined(__386__) && defined(__WATCOMC__)
-# define DebugBreak { _asm { int 0x03 } }
+# define DebugBreakpoint { _asm { int 0x03 } }
 #elif defined(HAVE_SIGNAL_H) && !defined(__WATCOMC__)
 # include <signal.h>
-# define DebugBreak raise(SIGTRAP)
+# define DebugBreakpoint raise(SIGTRAP)
 #else
 /* How do we trigger breakpoints on this platform? */
-# define DebugBreak Assert(false)
+# define DebugBreakpoint Assert(false)
 #endif
 
 #if COMPILER_GCC || COMPILER_CLANG
@@ -202,10 +202,10 @@ typedef double f64;
 #else
 # define AssertAlways(e) do{ if(!(e)){ \
 printf(__FILE__"("stringify(__LINE__)"): Assert fail: "#e "\n"); \
-fflush(stdout); DebugBreak; } }while(0)
+fflush(stdout); DebugBreakpoint; } }while(0)
 # define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
 printf(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
-fflush(stdout); DebugBreak; } }while(0)
+fflush(stdout); DebugBreakpoint; } }while(0)
 #endif
 
 #if RELEASE_MODE
@@ -583,7 +583,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
     double Multiplier = 1.0;
     
     view ExponentStr = {0, 0};
-
+    
     int j = 0;
     for(; j < (int)v.Len; j++)
     {
@@ -598,7 +598,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             // Try to parse exponent
             // Not sure how I feel about this, there probably is a better way to do this
             ExponentStr = view_FromParts(v.Data + j + 1, v.Len - j - 1);
-
+            
             bool Prefixed = false;
             bool ExpNeg = false;
             if(ExponentStr.Len > 1) {
@@ -614,15 +614,15 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
                     ExponentStr.Len--;
                 }
             }
-
+            
             if(*ExponentStr.Data > '9' || *ExponentStr.Data < '0') break;
-
+            
             int ExpEnd = 0;
             for(; ExpEnd < ExponentStr.Len; ExpEnd++)
             {
                 if(ExponentStr.Data[ExpEnd] > '9' || ExponentStr.Data[ExpEnd] < '0') break;
             }
-
+            
             double ExpMultiplier = 10.0;
             int charVal = ExponentStr.Data[ExpEnd - 1] - '0';
             if(ExpNeg) {
@@ -645,7 +645,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
                     ExpMultiplier *= 10000000000.0;
                 }
             }
-
+            
             j += 1 + ExpEnd + (int)Prefixed;
             break;
         }
@@ -662,7 +662,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             Val += v.Data[j] - '0';
         }
     }
-
+    
     if(Neg) Val = -Val;
     *Result = Val;
     if(Remaining) {
