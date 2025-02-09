@@ -767,6 +767,7 @@ ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment)
 
 ARENAPROC size_t ArenaGetRemaining_align(memory_arena *Arena, size_t Alignment)
 {
+    AssertMsg(Alignment != 0, "Alignment parameter must be at least 1");
     size_t Result = Arena->Size - (Arena->Used + ArenaGetAlignmentOffset(Arena, Alignment));
     return Result;
 }
