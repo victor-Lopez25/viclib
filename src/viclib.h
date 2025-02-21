@@ -2,7 +2,7 @@
 --Author: Víctor López Cortés
 --Usage:
 -Defines: To have any of these take effect, you must define them _before_ including this file
-BASE_TYPES_IMPLEMENTATION if you want to have the implementation
+VICLIB_IMPLEMENTATION if you want to have the implementation
 READ_ENTIRE_FILE_MAX if you want to have a max file read size
 QUIET_ASSERT if you want the assertions to add a breakpoint but not print
 RELEASE_MODE to have some stuff work faster, right now, assertions get compiled out when this is defined
