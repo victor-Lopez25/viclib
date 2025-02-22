@@ -385,7 +385,7 @@ VIEWPROC view view_FromCstr(const char *Cstr)
 
 VIEWPROC view view_Slice(view A, size_t Start, size_t End)
 {
-    AssertMsg(Start <= End, "Start must be bigger than end");
+    AssertMsg(Start <= End, "Start must be smaller or equal to End");
     return view_FromParts(A.Data + Start, End - Start);
 }
 
