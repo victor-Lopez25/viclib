@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #define VICLIB_IMPLEMENTATION
 #include "../viclib.h"

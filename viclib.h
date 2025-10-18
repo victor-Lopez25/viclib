@@ -177,7 +177,9 @@ typedef int16_t  s16;
 typedef int32_t  s32;
 typedef int64_t  s64;
 
+#ifndef bool
 typedef uint8_t  bool;
+#endif
 typedef uint32_t b32;
 typedef float f32;
 typedef double f64;
@@ -601,13 +603,13 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
 
     bool FoundExponent = false;
     view ExponentStr;
-    int j = 0;
-    for(; j < (int)v.Len; j++)
+    size_t j = 0;
+    for(; j < v.Len; j++)
     {
         char c = v.Data[j];
         if(c == '.') {
             DecimalPart = true;
-            if(j+1 < (int)v.Len && (v.Data[j+1] > '9' || v.Data[j+1] < '0')) {
+            if(j+1 < v.Len && (v.Data[j+1] > '9' || v.Data[j+1] < '0')) {
                 break;
             }
         }
@@ -647,17 +649,16 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             if(ExpNeg) {
                 for(int k = 0; k < charVal; k++) Val /= ExpMultiplier;
                 ExpMultiplier = 10000000000.0;
-                for(int k = ExpEnd - 2; k >= 0; k--)
+                for(size_t k = ExpEnd - 2; k >= 0; k--)
                 {
                     charVal = ExponentStr.Data[k] - '0';
                     for(int l = 0; l < charVal; l++) Val /= ExpMultiplier;
                     ExpMultiplier *= 10000000000.0;
                 }
-            }
-            else {
+            } else {
                 for(int k = 0; k < charVal; k++) Val *= ExpMultiplier;
                 ExpMultiplier = 10000000000.0;
-                for(int k = ExpEnd - 2; k >= 0; k--)
+                for(size_t k = ExpEnd - 2; k >= 0; k--)
                 {
                     charVal = ExponentStr.Data[k] - '0';
                     for(int l = 0; l < charVal; l++) Val *= ExpMultiplier;
@@ -665,7 +666,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
                 }
             }
 
-            j += 1 + ExpEnd + (int)Prefixed;
+            j += 1 + ExpEnd + (size_t)Prefixed;
             break;
         }
         else if(c > '9' || c < '0') {
@@ -685,8 +686,8 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
     if(Neg) Val = -Val;
     *Result = Val;
     if(Remaining) {
-        Remaining->Data = v.Data + (size_t)j;
-        Remaining->Len = v.Len - (size_t)j;
+        Remaining->Data = v.Data + j;
+        Remaining->Len = v.Len - j;
     }
     return (DecimalPart || FoundExponent) ? PARSE_OK : PARSE_NO_DECIMALS;
 }
