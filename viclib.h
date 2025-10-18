@@ -160,11 +160,6 @@ extern void __cdecl __debugbreak(void);
 
 #define fallthrough
 
-// Thanks Martins for the help with this!
-// If one parameter was passed, it will select the first
-#define SELECT_PROC_1DEFAULT_(_1, _2, NAME, ...) NAME
-#define SELECT_PROC_1DEFAULT(A, B, ...) SELECT_PROC_1DEFAULT_(dummy, ##__VA_ARGS__, A, B)
-
 #include <stdint.h>
 
 typedef uint8_t  u8;
