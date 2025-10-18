@@ -2,7 +2,7 @@
 --Author: Víctor López Cortés
 --Usage:
 -Defines: To have any of these take effect, you must define them _before_ including this file
-BASE_TYPES_IMPLEMENTATION if you want to have the implementation
+VICLIB_IMPLEMENTATION if you want to have the implementation
 READ_ENTIRE_FILE_MAX if you want to have a max file read size
 QUIET_ASSERT if you want the assertions to add a breakpoint but not print
 RELEASE_MODE to have some stuff work faster, right now, assertions get compiled out when this is defined
@@ -213,6 +213,10 @@ fflush(stdout); DebugBreakpoint; } }while(0)
 
 thread_local u32 ErrorNumber = 0;
 
+#ifndef VLIBPROC
+# define VLIBPROC
+#endif
+
 ////////////////////////////////
 // intrinsics
 ////////////////////////////////
@@ -220,8 +224,8 @@ thread_local u32 ErrorNumber = 0;
 void mem_copy_non_overlapping(void *dst, const void *src, size_t len);
 void mem_copy(void *dst, const void *src, size_t len);
 #define ZeroStruct(S) mem_zero(&(S), sizeof(S))
-void mem_zero(void *data, size_t len);
-int mem_compare(const void *str1, const void *str2, size_t count);
+VLIBPROC void mem_zero(void *data, size_t len);
+VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count);
 
 ////////////////////////////////
 
@@ -235,12 +239,13 @@ typedef struct {
 #define VIEW_ARG(v) (int)(v).Len, (v).Data
 
 #ifndef VIEWPROC
-# define VIEWPROC
+# define VIEWPROC VLIBPROC
 #endif
 
 int is_space(int _c);
 VIEWPROC view view_FromParts(const char *Data, size_t Count);
 VIEWPROC view view_FromCstr(const char *Cstr);
+VIEWPROC view view_Slice(view A, size_t start, size_t end); // won't include end
 VIEWPROC bool view_Eq(view A, view B);
 VIEWPROC view view_ChopByDelim(view *v, char Delim);
 VIEWPROC view view_ChopByView(view *v, view Delim); // full view is the delim
@@ -288,7 +293,7 @@ typedef struct {
 } scratch_arena;
 
 #ifndef ARENAPROC
-#define ARENAPROC
+# define ARENAPROC VLIBPROC
 #endif
 
 typedef struct {
@@ -385,6 +390,12 @@ VIEWPROC view view_FromCstr(const char *Cstr)
     v.Len = 0;
     for(; *Cstr != 0; Cstr++) v.Len++;
     return v;
+}
+
+VIEWPROC view view_Slice(view A, size_t Start, size_t End)
+{
+    AssertMsg(Start <= End, "Start must be smaller or equal to End");
+    return view_FromParts(A.Data + Start, End - Start);
 }
 
 VIEWPROC view view_TrimLeft(view v)
@@ -592,8 +603,8 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
     double Val = 0.0;
     double Multiplier = 1.0;
 
-    view ExponentStr = {0, 0};
-
+    bool FoundExponent = false;
+    view ExponentStr;
     int j = 0;
     for(; j < (int)v.Len; j++)
     {
@@ -625,8 +636,10 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
                 }
             }
 
+            if(ExponentStr.Len < 1) break;
             if(*ExponentStr.Data > '9' || *ExponentStr.Data < '0') break;
-
+            
+            FoundExponent = true;
             int ExpEnd = 0;
             for(; ExpEnd < ExponentStr.Len; ExpEnd++)
             {
@@ -679,12 +692,12 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
         Remaining->Data = v.Data + (size_t)j;
         Remaining->Len = v.Len - (size_t)j;
     }
-    return (DecimalPart || ExponentStr.Data) ? PARSE_OK : PARSE_NO_DECIMALS;
+    return (DecimalPart || FoundExponent) ? PARSE_OK : PARSE_NO_DECIMALS;
 }
 
 ////////////////////////////////
 
-void mem_copy_non_overlapping(void *dst, const void *src, size_t len)
+VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len)
 {
     size_t i;
     /*
@@ -720,7 +733,7 @@ void mem_copy_non_overlapping(void *dst, const void *src, size_t len)
     }
 }
 
-void mem_copy(void *dst, const void *src, size_t len)
+VLIBPROC void mem_copy(void *dst, const void *src, size_t len)
 {
     if(dst < src) {
         mem_copy_non_overlapping(dst, src, len);
@@ -750,7 +763,7 @@ void mem_copy(void *dst, const void *src, size_t len)
     //else -> they are the same
 }
 
-void mem_zero(void *data, size_t len)
+VLIBPROC void mem_zero(void *data, size_t len)
 {
     size_t i;
 
@@ -771,7 +784,7 @@ void mem_zero(void *data, size_t len)
     }
 }
 
-int mem_compare(const void *str1, const void *str2, size_t count)
+VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
 {
     register const unsigned char *s1 = (const unsigned char*)str1;
     register const unsigned char *s2 = (const unsigned char*)str2;

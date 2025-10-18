@@ -30,6 +30,9 @@ void TestViewStrs()
     view T7 = VIEW_STATIC("\t \nHello\v\f\r");
     T6 = view_Trim(T7);
     printf("To trim: \""VIEW_FMT"\"\tTrimmed: \""VIEW_FMT"\"\n", VIEW_ARG(T7), VIEW_ARG(T6));
+
+    view T8 = view_Slice(T6, 2, 4);
+    printf("To slice: \""VIEW_FMT"\"\tSliced (2, 4): \""VIEW_FMT"\"\n", VIEW_ARG(T6), VIEW_ARG(T8));
 }
 
 void TestParsing()
