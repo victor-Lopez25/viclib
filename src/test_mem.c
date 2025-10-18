@@ -50,7 +50,7 @@ int main()
             } break;
             case 1: {
                 if(!CurrNode->Right) {
-                    CurrNode->Right = PushStruct(TempArena, tree_node);
+                    CurrNode->Right = PushStruct(TempArena, tree_node, 4);
                 }
                 CurrNode->Right->SomeData = i;
             } break;
