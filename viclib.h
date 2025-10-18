@@ -820,14 +820,14 @@ ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment)
 
 ARENAPROC size_t ArenaGetRemaining_Opt(ArenaGetRemaining_opts opt)
 {
-    AssertMsg(opt.Alignment != 0, "Alignment parameter must be at least 1");
+    if(opt.Alignment < 1) opt.Alignment = 1;
     size_t Result = opt.Arena->Size - (opt.Arena->Used + ArenaGetAlignmentOffset(opt.Arena, opt.Alignment));
     return Result;
 }
 
 ARENAPROC void *ArenaPushSize_Opt(ArenaPushSize_opts opt)
 {
-    AssertMsg(opt.Alignment != 0, "Alignment parameter must be at least 1");
+    if(opt.Alignment < 1) opt.Alignment = 1;
     size_t Size = opt.RequestSize;
     size_t AlignOffset = ArenaGetAlignmentOffset(opt.Arena, opt.Alignment);
     Size += AlignOffset;
