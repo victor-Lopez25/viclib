@@ -158,6 +158,13 @@ extern void __cdecl __debugbreak(void);
 #define stringify_(a) #a
 #define stringify(a) stringify_(a)
 
+#ifndef min
+# define min(A, B) ((A) < (B) ? (A) : (B))
+#endif
+#ifndef max
+# define max(A, B) ((A) > (B) ? (A) : (B))
+#endif
+
 #define fallthrough
 
 #include <stdint.h>
@@ -689,7 +696,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             if(ExpNeg) {
                 for(int k = 0; k < charVal; k++) Val /= ExpMultiplier;
                 ExpMultiplier = 10000000000.0;
-                for(size_t k = ExpEnd - 2; k >= 0; k--)
+                for(s64 k = (s64)ExpEnd - 2; k >= 0; k--)
                 {
                     charVal = ExponentStr.Data[k] - '0';
                     for(int l = 0; l < charVal; l++) Val /= ExpMultiplier;
@@ -698,7 +705,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             } else {
                 for(int k = 0; k < charVal; k++) Val *= ExpMultiplier;
                 ExpMultiplier = 10000000000.0;
-                for(size_t k = ExpEnd - 2; k >= 0; k--)
+                for(s64 k = (s64)ExpEnd - 2; k >= 0; k--)
                 {
                     charVal = ExponentStr.Data[k] - '0';
                     for(int l = 0; l < charVal; l++) Val *= ExpMultiplier;
@@ -734,70 +741,70 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
 
 ////////////////////////////////
 
+#define VCL_ALIGN (sizeof(size_t)-1)
 VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len)
 {
-    size_t i;
-    /*
-    * memcpy does not support overlapping buffers, so always do it
-    * forwards. (Don't change this without adjusting memmove.)
-    *
-    * For speedy copying, optimize the common case where both pointers
-    * and the length are word-aligned, and copy word-at-a-time instead
-    * of byte-at-a-time. Otherwise, copy by bytes.
-    *
-    * The alignment logic below should be portable. We rely on
-    * the compiler to be reasonably intelligent about optimizing
-    * the divides and modulos out. Fortunately, it is.
-    */
-    if ((uintptr_t)dst % sizeof(long) == 0 &&
-        (uintptr_t)src % sizeof(long) == 0 &&
-        len % sizeof(long) == 0) {
+    u8 *d = (u8*)dst;
+    const u8 *s = (const u8*)src;
+    if(((uintptr_t)d & VCL_ALIGN) != ((uintptr_t)s & VCL_ALIGN))
+        goto misaligned;
 
-        long *d = (long*)dst;
-        const long *s = (long*)src;
+    for(; ((uintptr_t)d & VCL_ALIGN) && len != 0; len--) *d++ = *s++;
+    if(len != 0) {
+        size_t *wideDst = (size_t*)d;
+        const size_t *wideSrc = (const size_t*)s;
 
-        for(i = 0; i < len/sizeof(long); i++) {
-            d[i] = s[i];
-        }
-    }
-    else {
-        char *d = (char*)dst;
-        const char *s = (char*)src;
-
-        for(i = 0; i < len; i++) {
-            d[i] = s[i];
-        }
+        for(; len >= sizeof(size_t); len -= sizeof(size_t)) *wideDst++ = *wideSrc++;
+        d = (u8*)wideDst;
+        s = (const u8*)wideSrc;
+misaligned:
+        for(; len != 0; len--) *d++ = *s++;
     }
 }
+#undef VCL_ALIGN
 
 VLIBPROC void mem_copy(void *dst, const void *src, size_t len)
 {
-    if(dst < src) {
-        mem_copy_non_overlapping(dst, src, len);
+    u8 *d = (u8*)dst;
+    const u8 *s = (const u8*)src;
+
+    if((uintptr_t)dst == (uintptr_t)src) return;
+    if((uintptr_t)s-(uintptr_t)d-len <= -2*len) {
+        mem_copy_non_overlapping(d, s, len);
+        return;
     }
-    else if(dst > src) {
-        s64 i;
-        if((uintptr_t)dst % sizeof(long) == 0 &&
-            (uintptr_t)src % sizeof(long) == 0 &&
-            len % sizeof(long) == 0) {
 
-            long *d = (long*)dst;
-            const long *s = (const long*)src;
-
-            for(i = len/sizeof(long) - 1; i >= 0; i--) {
-                d[i] = s[i];
+    if(d < s) {
+#if COMPILER_GCC
+		if((uintptr_t)s % sizeof(size_t) == (uintptr_t)d % sizeof(size_t)) {
+			while((uintptr_t)d % sizeof(size_t)) {
+				if(!len--) return;
+				*d++ = *s++;
+			}
+            __attribute__((__may_alias__)) size_t *wideDst = (size_t*)d;
+            __attribute__((__may_alias__)) size_t *wideSrc = (size_t*)s;
+			for(; len >= sizeof(size_t); len -= sizeof(size_t)) *d++ = *s++;
+            d = (u8*)wideDst;
+            s = (const u8*)wideSrc;
+        }
+#endif
+		for (; len; len--) *d++ = *s++;
+    } else {
+#if COMPILER_GCC
+		if((uintptr_t)s % sizeof(size_t) == (uintptr_t)d % sizeof(size_t)) {
+			while((uintptr_t)(d + len) % sizeof(size_t)) {
+				if(!len--) return;
+				d[len] = s[len];
+			}
+			while(len >= sizeof(size_t)) {
+                len -= sizeof(size_t);
+                *(__attribute__((__may_alias__)) size_t*)(d + len) = 
+                    *(__attribute__((__may_alias__)) size_t*)(s + len);
             }
         }
-        else {
-            char *d = (char*)dst;
-            const char *s = (const char*)src;
-
-            for(i = len - 1; i >= 0; i--) {
-                d[i] = s[i];
-            }
-        }
+#endif
+		while(len) len--, d[len] = s[len];
     }
-    //else -> they are the same
 }
 
 VLIBPROC void mem_zero(void *data, size_t len)
@@ -813,7 +820,7 @@ VLIBPROC void mem_zero(void *data, size_t len)
         }
     }
     else {
-        char *d = data;
+        char *d = (char*)data;
 
         for(i = 0; i < len; i++) {
             d[i] = 0;
@@ -828,7 +835,7 @@ VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
 
     for(;count-- > 0;)
     {
-        if (*s1++ != *s2++)
+        if(*s1++ != *s2++)
             return s1[-1] < s2[-1] ? -1 : 1;
     }
     return 0;
