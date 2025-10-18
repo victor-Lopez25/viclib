@@ -11,7 +11,7 @@ RELEASE_MODE to have some stuff work faster, right now, assertions get compiled 
 --Many thanks to the inspirations for this library:
 - Mr4th's 4ed_base_types.h - https://mr-4th.itch.io/4coder (find the file in 'custom' directory)
 - stb header-only libraries - https://github.com/nothings/stb
- - tsoding's string view implementation - https://github.com/tsoding/sv
+- tsoding's string view implementation - https://github.com/tsoding/sv
 
 I modified tsoding's string view so that it doesn't use the stdlib by implementing the couple
 functions it uses
@@ -223,6 +223,7 @@ thread_local u32 ErrorNumber = 0;
 ////////////////////////////////
 
 void mem_copy_non_overlapping(void *dst, const void *src, size_t len);
+void mem_copy(void *dst, const void *src, size_t len);
 #define ZeroStruct(S) mem_zero(&(S), sizeof(S))
 void mem_zero(void *data, size_t len);
 int mem_compare(const void *str1, const void *str2, size_t count);
@@ -282,7 +283,7 @@ typedef struct {
     size_t Size;
     u8 *Base;
     size_t Used;
-    
+
     s32 ScratchCount;
 } memory_arena;
 
@@ -295,22 +296,28 @@ typedef struct {
 #define ARENAPROC
 #endif
 
+typedef struct {
+    memory_arena *Arena;
+    size_t Alignment;
+} ArenaGetRemaining_opts;
+typedef struct {
+    memory_arena *Arena;
+    size_t RequestSize;
+    size_t Alignment;
+} ArenaPushSize_opts;
+
+#define ArenaGetRemaining(Arena, ...) ArenaGetRemaining_Opt((ArenaGetRemaining_opts){(Arena), __VA_ARGS__})
+#define ArenaPushSize(Arena, size, ...) ArenaPushSize_Opt((ArenaPushSize_opts){(Arena), (size), __VA_ARGS__})
+#define PushStruct(Arena, type, ...) ArenaPushSize_Opt((ArenaPushSize_opts){(Arena), sizeof(type), __VA_ARGS__})
+#define PushArray(Arena, count, type, ...) ArenaPushSize_Opt((ArenaPushSize_opts){(Arena), (count)*sizeof(type), __VA_ARGS__})
+#define ArenaClear(Arena, ZeroMem) if(ZeroMem) {mem_zero((Arena)->Base, (Arena)->Size);} (Arena)->Used = 0
 ARENAPROC void ArenaInit(memory_arena *Arena, size_t Size, void *Base);
-#define ArenaGetRemaining(Arena, ...) \
-SELECT_PROC_1DEFAULT(ArenaGetRemaining_align, ArenaGetRemaining_default, ##__VA_ARGS__)((Arena), ## __VA_ARGS__)
-#define PushStruct(Arena, type, ...) (type*) \
-SELECT_PROC_1DEFAULT(ArenaPushSize_align, ArenaPushSize_default, ##__VA_ARGS__)((Arena), sizeof(type), ## __VA_ARGS__)
-#define PushArray(Arena, Count, type, ...) (type*) \
-SELECT_PROC_1DEFAULT(ArenaPushSize_align, ArenaPushSize_default, ##__VA_ARGS__)((Arena), (Count)*sizeof(type), ## __VA_ARGS__)
 ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena);
 ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem);
-#define ArenaClear(Arena, ZeroMem) if(ZeroMem) {mem_zero((Arena)->Base, (Arena)->Size);} (Arena)->Used = 0
-
 ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment);
-ARENAPROC size_t ArenaGetRemaining_align(memory_arena *Arena, size_t Alignment);
 
-#define ArenaGetRemaining_default(Arena) ArenaGetRemaining_align((Arena), 4)
-#define ArenaPushSize_default(Arena, Size) ArenaPushSize_align((Arena), Size, 4)
+ARENAPROC size_t ArenaGetRemaining_Opt(ArenaGetRemaining_opts opts);
+ARENAPROC void *ArenaPushSize_Opt(ArenaPushSize_opts opt);
 
 ////////////////////////////////
 
@@ -349,7 +356,14 @@ char *std_ReadEntireFile(const char *file, size_t *size);
 
 #endif // stdio.h && (malloc.h || stdlib.h) included
 
+// introsort
+bool int_less_than(const void *A, const void *B);
 
+void _SwapSize(void *A, void *B, size_t Size);
+void Sort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *));
+void _IntroSort(void *Data, size_t lo, size_t hi, int Depth, size_t ElementSize, bool (*less_than)(const void *, const void *));
+void _InsertionSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *));
+void _HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *));
 
 #ifdef VICLIB_IMPLEMENTATION
 
@@ -381,14 +395,14 @@ VIEWPROC view view_TrimLeft(view v)
 {
     size_t i = 0;
     for(;i < v.Len && is_space(v.Data[i]);) i += 1;
-    
+
     return view_FromParts((const char*)(v.Data + i), v.Len - i);
 }
 VIEWPROC view view_TrimRight(view v)
 {
     size_t i = 0;
     for(;i < v.Len && is_space(v.Data[v.Len - 1 - i]);) i += 1;
-    
+
     return view_FromParts((const char*)v.Data, v.Len - i);
 }
 VIEWPROC view view_Trim(view v)
@@ -406,9 +420,9 @@ VIEWPROC view view_ChopByDelim(view *v, char Delim)
 {
     size_t i = 0;
     for(;i < v->Len && v->Data[i] != Delim;) i += 1;
-    
+
     view Result = view_FromParts((const char*)v->Data, i);
-    
+
     if(i < v->Len) {
         v->Len -= i + 1;
         v->Data += i + 1;
@@ -417,7 +431,7 @@ VIEWPROC view view_ChopByDelim(view *v, char Delim)
         v->Len -= i;
         v->Data += i;
     }
-    
+
     return Result;
 }
 
@@ -430,39 +444,39 @@ VIEWPROC view view_ChopByView(view *v, view Delim)
         i++;
         Window.Data++;
     }
-    
+
     view Result = view_FromParts((const char*)v->Data, i);
-    
+
     if(i + Delim.Len == v->Len) {
         // include last <Delim.Len> characters if they aren't
         //  equal to Delim
         Result.Len += Delim.Len;
     }
-    
+
     v->Data += i + Delim.Len;
     v->Len -= i + Delim.Len;
-    
+
     return Result;
 }
 
 VIEWPROC view view_ChopLeft(view *v, size_t n)
 {
     if(n > v->Len) n = v->Len;
-    
+
     view Result = view_FromParts((const char*)v->Data, n);
     v->Data += n;
     v->Len -= n;
-    
+
     return Result;
 }
 
 VIEWPROC view view_ChopRight(view *v, size_t n)
 {
     if(n > v->Len) n = v->Len;
-    
+
     view Result = view_FromParts((const char*)(v->Data + v->Len - n), n);
     v->Len -= n;
-    
+
     return Result;
 }
 
@@ -489,7 +503,7 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
 {
     AssertMsg(Result != 0, "Result parameter must be a valid pointer");
     if(v.Len == 0) return false;
-    
+
     bool Neg = false;
     if(v.Len > 1) {
         if(v.Data[0] == '-') {
@@ -502,7 +516,7 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
             v.Len--;
         }
     }
-    
+
     int Base = 10;
     // try to parse a prefix
     if(v.Len > 2 && v.Data[0] == '0') {
@@ -522,10 +536,10 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
             Base = 16; v.Data += 2; v.Len -= 2;
         }
     }
-    
+
     int Digit = _digit_val((int)v.Data[0]);
     if(Digit >= Base) return false;
-    
+
     s64 Value = 0;
     int j = 0;
     for(; j < (int)v.Len; j++)
@@ -541,14 +555,14 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
             Value += Digit;
         }
     }
-    
+
     if(Neg) Value = -Value;
     *Result = Value;
     if(Remaining) {
         Remaining->Data = v.Data + (size_t)j;
         Remaining->Len = v.Len - (size_t)j;
     }
-    
+
     return true;
 }
 
@@ -557,7 +571,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
     AssertMsg(Result != 0, "Result parameter must be a valid pointer");
     if(v.Len == 0) return PARSE_FAIL;
     bool DecimalPart = false;
-    
+
     bool Neg = false;
     if(v.Len > 1) {
         if(v.Data[0] == '-') {
@@ -570,20 +584,20 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             v.Len--;
         }
     }
-    
+
     if(v.Len > 1 && v.Data[0] == '.') {
         DecimalPart = true;
         v.Data++;
         v.Len--;
     }
-    
+
     if(*v.Data > '9' || *v.Data < '0') return PARSE_FAIL;
-    
+
     double Val = 0.0;
     double Multiplier = 1.0;
-    
+
     view ExponentStr = {0, 0};
-    
+
     int j = 0;
     for(; j < (int)v.Len; j++)
     {
@@ -598,7 +612,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             // Try to parse exponent
             // Not sure how I feel about this, there probably is a better way to do this
             ExponentStr = view_FromParts(v.Data + j + 1, v.Len - j - 1);
-            
+
             bool Prefixed = false;
             bool ExpNeg = false;
             if(ExponentStr.Len > 1) {
@@ -614,15 +628,15 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
                     ExponentStr.Len--;
                 }
             }
-            
+
             if(*ExponentStr.Data > '9' || *ExponentStr.Data < '0') break;
-            
+
             int ExpEnd = 0;
             for(; ExpEnd < ExponentStr.Len; ExpEnd++)
             {
                 if(ExponentStr.Data[ExpEnd] > '9' || ExponentStr.Data[ExpEnd] < '0') break;
             }
-            
+
             double ExpMultiplier = 10.0;
             int charVal = ExponentStr.Data[ExpEnd - 1] - '0';
             if(ExpNeg) {
@@ -645,7 +659,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
                     ExpMultiplier *= 10000000000.0;
                 }
             }
-            
+
             j += 1 + ExpEnd + (int)Prefixed;
             break;
         }
@@ -662,7 +676,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             Val += v.Data[j] - '0';
         }
     }
-    
+
     if(Neg) Val = -Val;
     *Result = Val;
     if(Remaining) {
@@ -692,39 +706,69 @@ void mem_copy_non_overlapping(void *dst, const void *src, size_t len)
     if ((uintptr_t)dst % sizeof(long) == 0 &&
         (uintptr_t)src % sizeof(long) == 0 &&
         len % sizeof(long) == 0) {
-        
-        long *d = dst;
-        const long *s = src;
-        
+
+        long *d = (long*)dst;
+        const long *s = (long*)src;
+
         for(i = 0; i < len/sizeof(long); i++) {
             d[i] = s[i];
         }
     }
     else {
-        char *d = dst;
-        const char *s = src;
-        
+        char *d = (char*)dst;
+        const char *s = (char*)src;
+
         for(i = 0; i < len; i++) {
             d[i] = s[i];
         }
     }
 }
 
+void mem_copy(void *dst, const void *src, size_t len)
+{
+    if(dst < src) {
+        mem_copy_non_overlapping(dst, src, len);
+    }
+    else if(dst > src) {
+        s64 i;
+        if((uintptr_t)dst % sizeof(long) == 0 &&
+            (uintptr_t)src % sizeof(long) == 0 &&
+            len % sizeof(long) == 0) {
+
+            long *d = (long*)dst;
+            const long *s = (const long*)src;
+
+            for(i = len/sizeof(long) - 1; i >= 0; i--) {
+                d[i] = s[i];
+            }
+        }
+        else {
+            char *d = (char*)dst;
+            const char *s = (const char*)src;
+
+            for(i = len - 1; i >= 0; i--) {
+                d[i] = s[i];
+            }
+        }
+    }
+    //else -> they are the same
+}
+
 void mem_zero(void *data, size_t len)
 {
     size_t i;
-    
+
     if ((uintptr_t)data % sizeof(long) == 0 &&
         len % sizeof(long) == 0) {
         long *d = (long*)data;
-        
+
         for(i = 0; i < len/sizeof(long); i++) {
             d[i] = 0;
         }
     }
     else {
         char *d = data;
-        
+
         for(i = 0; i < len; i++) {
             d[i] = 0;
         }
@@ -735,7 +779,7 @@ int mem_compare(const void *str1, const void *str2, size_t count)
 {
     register const unsigned char *s1 = (const unsigned char*)str1;
     register const unsigned char *s2 = (const unsigned char*)str2;
-    
+
     for(;count-- > 0;)
     {
         if (*s1++ != *s2++)
@@ -765,24 +809,24 @@ ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment)
     return AlignOffset;
 }
 
-ARENAPROC size_t ArenaGetRemaining_align(memory_arena *Arena, size_t Alignment)
+ARENAPROC size_t ArenaGetRemaining_Opt(ArenaGetRemaining_opts opt)
 {
-    AssertMsg(Alignment != 0, "Alignment parameter must be at least 1");
-    size_t Result = Arena->Size - (Arena->Used + ArenaGetAlignmentOffset(Arena, Alignment));
+    AssertMsg(opt.Alignment != 0, "Alignment parameter must be at least 1");
+    size_t Result = opt.Arena->Size - (opt.Arena->Used + ArenaGetAlignmentOffset(opt.Arena, opt.Alignment));
     return Result;
 }
 
-ARENAPROC void *ArenaPushSize_align(memory_arena *Arena, size_t RequestSize, size_t Alignment)
+ARENAPROC void *ArenaPushSize_Opt(ArenaPushSize_opts opt)
 {
-    AssertMsg(Alignment != 0, "Alignment parameter must be at least 1");
-    size_t Size = RequestSize;
-    size_t AlignOffset = ArenaGetAlignmentOffset(Arena, Alignment);
+    AssertMsg(opt.Alignment != 0, "Alignment parameter must be at least 1");
+    size_t Size = opt.RequestSize;
+    size_t AlignOffset = ArenaGetAlignmentOffset(opt.Arena, opt.Alignment);
     Size += AlignOffset;
-    
-    AssertMsg((Arena->Used + Size) <= Arena->Size, "Assert Fail: Full arena size reached");
-    void *Mem = Arena->Base + Arena->Used + AlignOffset;
-    Arena->Used += Size;
-    
+
+    AssertMsg((opt.Arena->Used + Size) <= opt.Arena->Size, "Assert Fail: Full arena size reached");
+    void *Mem = opt.Arena->Base + opt.Arena->Used + AlignOffset;
+    opt.Arena->Used += Size;
+
     return Mem;
 }
 
@@ -793,7 +837,7 @@ ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena)
         .StartMemOffset = Arena->Used,
     };
     Arena->ScratchCount += 1;
-    
+
     return Scratch;
 }
 
@@ -828,32 +872,32 @@ char *win32_ReadEntireFile(const char *File, size_t *Size)
             case ERROR_PATH_NOT_FOUND: fallthrough;
             case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
             case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_READ_ACCESS_DENIED; break;
-            
+
             default: ErrorNumber = ERROR_READ_UNKNOWN; break;
         }
     }
-    
+
     LARGE_INTEGER FileSize;
     if(ok) {
         ok = (bool)GetFileSizeEx(FileHandle, &FileSize);
         if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
-    
+
     u64 Limit = READ_ENTIRE_FILE_MAX;
-    
+
     if(ok) {
         ok = (u64)FileSize.QuadPart <= Limit;
         if(!ok) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
     }
     u32 FileSizeU32 = (u32)FileSize.QuadPart;
-    
+
     if(ok) {
         // TODO: VirtualAlloc or HeapAlloc here?
         Result = (char*)VirtualAlloc(0, FileSize.QuadPart, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
         ok = Result != 0;
         if(!ok) ErrorNumber = ERROR_READ_NO_MEM;
     }
-    
+
     if(ok) {
         DWORD BytesRead;
         if(ReadFile(FileHandle, Result, FileSizeU32, &BytesRead, 0) && (FileSize.QuadPart == BytesRead))
@@ -866,9 +910,9 @@ char *win32_ReadEntireFile(const char *File, size_t *Size)
             Result = 0;
         }
     }
-    
+
     CloseHandle(FileHandle);
-    
+
     return Result;
 }
 
@@ -886,58 +930,190 @@ char *std_ReadEntireFile(const char *file, size_t *size)
     FILE *f = fopen(file, "rb");
     bool ok = f != 0;
     if(!ok) ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-    
+
     if(ok) {
         ok = fseek(f, 0, SEEK_END) >= 0;
         if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
-    
+
     long m;
     if(ok) {
         m = ftell(f);
         ok = (u64)m <= (u64)READ_ENTIRE_FILE_MAX;
         if(!ok) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
-        
+
         ok = m >= 0;
         // ftell() fail
         if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
-    
+
     if(ok) {
         buffer = malloc(sizeof(char) * m);
         ok = buffer != 0;
         if(!ok) ErrorNumber = ERROR_READ_NO_MEM;
     }
-    
+
     if(ok) {
         ok = fseek(f, 0, SEEK_SET) >= 0;
         if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
-    
+
     if(ok) {
         size_t n = fread(buffer, 1, m, f);
         ok = n == (size_t)m;
         if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
-    
+
     if(ok) {
         ok = !ferror(f);
         if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
-    
+
     if(size) {
         *size = m;
     }
-    
+
     if(f) fclose(f);
     if(!ok && buffer) free(buffer);
-    
+
     return buffer;
 }
 
 RESTORE_WARNINGS
 
 #endif // stdio.h && (malloc.h || stdlib.h) included
+
+bool int_less_than(const void *A, const void *B) {
+    return (*(int*)A < *(int*)B);
+}
+
+#define _Swap(A,B) temp = (A); (A) = (B); (B) = temp
+void _SwapSize(void *A, void *B, size_t Size)
+{
+    size_t i;
+    if((uintptr_t)A % sizeof(u32) == 0 &&
+       (uintptr_t)B % sizeof(u32) == 0 &&
+       Size % sizeof(long) == 0)
+    {
+        u32 temp;
+        u32 *APtr = (u32*)A;
+        u32 *BPtr = (u32*)B;
+
+        for(i = 0; i < Size/sizeof(u32); i++) {
+            _Swap(*APtr, *BPtr);
+            APtr++; BPtr++;
+        }
+    }
+    else {
+        char temp;
+        char *APtr = (char*)A;
+        char *BPtr = (char*)B;
+
+        for(i = 0; i < Size; i++) {
+            _Swap(*APtr, *BPtr);
+            APtr++; BPtr++;
+        }
+    }
+}
+
+// introsort
+void Sort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
+{
+    // compute MaxDepth = 2*log_2(Count)
+    int MaxDepth = -2;
+    for(size_t i = Count; i != 0; i >>= 1) MaxDepth += 2;
+    _IntroSort(Data, 0, Count - 1, MaxDepth, ElementSize, less_than);
+}
+void _IntroSort(void *Data, size_t lo, size_t hi, int Depth, size_t ElementSize, bool (*less_than)(const void *, const void *))
+{
+    if(lo < hi) {
+        if((hi - lo + 1) < 16) {
+            _InsertionSort((u8*)Data + lo*ElementSize, hi - lo + 1, ElementSize, less_than);
+        }
+        else if(Depth == 0) {
+            _HeapSort((u8*)Data + lo*ElementSize, hi - lo + 1, ElementSize, less_than);
+        }
+        else {
+            size_t PivotIdx = (lo + hi)/2; // median of 3 could be better here, I'm not sure
+
+            _SwapSize((u8*)Data + PivotIdx*ElementSize, (u8*)Data + lo*ElementSize, ElementSize);
+            void *Pivot = (u8*)Data + lo*ElementSize;
+
+            size_t i = lo + 1;
+            for(size_t j = lo + 1; j < hi + 1; j++)
+            {
+                if(less_than((u8*)Data + j*ElementSize, Pivot)) {
+                    // swap(Arr[i], Arr[j]);
+                    _SwapSize((u8*)Data + i*ElementSize, (u8*)Data + j*ElementSize, ElementSize);
+                    i++;
+                }
+            }
+            // swap(Arr[lo], Arr[i-1]);
+            _SwapSize((u8*)Data + lo*ElementSize, (u8*)Data + (i-1)*ElementSize, ElementSize);
+            PivotIdx = i - 1;
+
+            if(PivotIdx > 0) _IntroSort(Data, lo, PivotIdx - 1, Depth - 1, ElementSize, less_than);
+            _IntroSort(Data, PivotIdx + 1, hi, Depth - 1, ElementSize, less_than);
+        }
+    }
+}
+
+void _InsertionSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
+{
+    for(size_t i = 1; i < Count; i++)
+    {
+        void *Val = (u8*)Data + i*ElementSize;
+
+        int64_t j = i - 1;
+        for(;j >= 0 && less_than(Val, (u8*)Data + j*ElementSize); j--)
+        {
+            mem_copy((u8*)Data + (j+1)*ElementSize, (u8*)Data + j*ElementSize, ElementSize);
+        }
+        mem_copy((u8*)Data + (j+1)*ElementSize, Val, ElementSize);
+    }
+}
+void _HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
+{
+    // left child = 2*i + 1
+    // right child = 2*i + 2
+    // parent = (i-1)/2 (truncated)
+
+    for(size_t Start = (Count - 2) / 2; Start > 0; Start--) {
+        size_t Root = Start;
+        while(2*Root + 1 < Count) {
+            size_t Child = 2*Root + 1;
+            if(Child + 1 < Count && less_than((u8*)Data + Child*ElementSize, (u8*)Data + (Child+1)*ElementSize)) {
+                Child++;
+            }
+            
+            if(less_than((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize)) {
+                _SwapSize((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize, ElementSize);
+                Root = Child;
+            } else {
+                break;
+            }
+        }
+    }
+    
+    for(size_t End = Count - 1; End > 0; End--) {
+        _SwapSize(Data, (u8*)Data + End*ElementSize, ElementSize);
+        
+        size_t Root = 0;
+        while(2*Root + 1 < End) {
+            size_t Child = 2*Root + 1;
+            if(Child + 1 < End && less_than((u8*)Data + Child*ElementSize, (u8*)Data + (Child+1)*ElementSize)) {
+                Child++;
+            }
+            
+            if(less_than((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize)) {
+                _SwapSize((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize, ElementSize);
+                Root = Child;
+            } else {
+                break;
+            }
+        }
+    }
+}
 
 #endif // VICLIB_IMPLEMENTATION
 #endif //VICLIB_H

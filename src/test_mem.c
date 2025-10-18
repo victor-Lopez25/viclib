@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 #define VICLIB_IMPLEMENTATION
-#include "viclib.h"
+#include "../viclib.h"
 
 typedef struct tree_node tree_node;
 struct tree_node {

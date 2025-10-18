@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 #define VICLIB_IMPLEMENTATION
-#include "viclib.h"
+#include "../viclib.h"
 
 int main()
 {
