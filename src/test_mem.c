@@ -44,7 +44,7 @@ int main()
         switch(i%4) {
             case 0: {
                 if(!CurrNode->Left) {
-                    CurrNode->Left = PushStruct(TempArena, tree_node);
+                    CurrNode->Left = PushStruct(TempArena, tree_node, .Alignment = 4);
                 }
                 CurrNode->Left->SomeData = i;
             } break;

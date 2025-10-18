@@ -141,15 +141,10 @@ extern void __cdecl __debugbreak(void);
 // gcc and cl (haven't tried clang
 // don't understand how functions like win32_ReadEntireFile work
 // but I want to keep the warnings for other functions
-# define PUSH_IGNORE_UNINITIALIZED \
-PRAGMA(GCC diagnostic push) \
-PRAGMA(GCC diagnostic ignored "-Wuninitialized")
+# define PUSH_IGNORE_UNINITIALIZED PRAGMA(GCC diagnostic push) PRAGMA(GCC diagnostic ignored "-Wuninitialized")
 # define RESTORE_WARNINGS PRAGMA(GCC diagnostic pop)
 #elif COMPILER_CL
-# define PUSH_IGNORE_UNINITIALIZED \
-PRAGMA(warning(push)) \
-PRAGMA(warning(disable: 4701)) \
-PRAGMA(warning(disable: 4703))
+# define PUSH_IGNORE_UNINITIALIZED PRAGMA(warning(push)) PRAGMA(warning(disable: 4701)) PRAGMA(warning(disable: 4703))
 # define RESTORE_WARNINGS PRAGMA(warning(pop))
 #else
 // compiler specific implementation
@@ -307,6 +302,7 @@ typedef struct {
 } ArenaPushSize_opts;
 
 // NOTE: Thanks Vjekoslav for the idea! (https://twitter.com/vkrajacic/status/1749816169736073295)
+
 #define ArenaGetRemaining(Arena, ...) ArenaGetRemaining_Opt((ArenaGetRemaining_opts){(Arena), __VA_ARGS__})
 #define ArenaPushSize(Arena, size, ...) ArenaPushSize_Opt((ArenaPushSize_opts){(Arena), (size), __VA_ARGS__})
 #define PushStruct(Arena, type, ...) ArenaPushSize_Opt((ArenaPushSize_opts){(Arena), sizeof(type), __VA_ARGS__})
@@ -640,7 +636,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
             if(*ExponentStr.Data > '9' || *ExponentStr.Data < '0') break;
             
             FoundExponent = true;
-            int ExpEnd = 0;
+            size_t ExpEnd = 0;
             for(; ExpEnd < ExponentStr.Len; ExpEnd++)
             {
                 if(ExponentStr.Data[ExpEnd] > '9' || ExponentStr.Data[ExpEnd] < '0') break;
