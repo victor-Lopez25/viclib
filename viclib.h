@@ -237,8 +237,11 @@ typedef struct {
 int is_space(int _c);
 VIEWPROC view view_FromParts(const char *Data, size_t Count);
 VIEWPROC view view_FromCstr(const char *Cstr);
-VIEWPROC view view_Slice(view A, size_t start, size_t end); // won't include end
+VIEWPROC view view_Slice(view A, size_t start, size_t end); // won't include end -> [start, end)
+VIEWPROC int  view_Compare(view A, view B); // result = A - B
 VIEWPROC bool view_Eq(view A, view B);
+VIEWPROC bool view_StartsWith(view v, view Start);
+VIEWPROC bool view_EndsWith(view v, view End);
 VIEWPROC view view_ChopByDelim(view *v, char Delim);
 VIEWPROC view view_ChopByView(view *v, view Delim); // full view is the delim
 VIEWPROC view view_ChopLeft(view *v, size_t n);
@@ -410,10 +413,33 @@ VIEWPROC view view_Trim(view v)
     return view_TrimRight(view_TrimLeft(v));
 }
 
+VIEWPROC int view_Compare(view A, view B)
+{
+    char res = 0;
+    for(size_t i = 0; i < min(A.Len, B.Len); i++)
+    {
+        res = A.Data[i] - B.Data[i];
+        if(res != 0) return res;
+    }
+    return A.Len - B.Len;
+}
+
 VIEWPROC bool view_Eq(view A, view B)
 {
     if(A.Len != B.Len) return false;
     else return mem_compare(A.Data, B.Data, A.Len) == 0;
+}
+
+VIEWPROC bool view_StartsWith(view v, view Start)
+{
+    if(Start.Len > v.Len) return false;
+    else return view_Eq(view_FromParts(v.Data, Start.Len), Start);
+}
+
+VIEWPROC bool view_EndsWith(view v, view End)
+{
+    if(End.Len > v.Len) return false;
+    else return view_Eq(view_FromParts(v.Data + v.Len - End.Len, End.Len), End);
 }
 
 VIEWPROC view view_ChopByDelim(view *v, char Delim)
