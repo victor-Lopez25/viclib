@@ -301,6 +301,7 @@ typedef struct {
     size_t Alignment;
 } ArenaPushSize_opts;
 
+// NOTE: Thanks Vjekoslav for the idea! (https://twitter.com/vkrajacic/status/1749816169736073295)
 #define ArenaGetRemaining(Arena, ...) ArenaGetRemaining_Opt((ArenaGetRemaining_opts){(Arena), __VA_ARGS__})
 #define ArenaPushSize(Arena, size, ...) ArenaPushSize_Opt((ArenaPushSize_opts){(Arena), (size), __VA_ARGS__})
 #define PushStruct(Arena, type, ...) ArenaPushSize_Opt((ArenaPushSize_opts){(Arena), sizeof(type), __VA_ARGS__})
