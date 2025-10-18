@@ -29,6 +29,9 @@ void TestViewStrs()
 
     view T7 = VIEW_STATIC("\t \nHello\v\f\r");
     T6 = view_Trim(T7);
+    Assert(view_StartsWith(T6, VIEW("Hell")));
+    Assert(view_Contains(T6, VIEW("ell")) == 1);
+    Assert(view_EndsWith(T6, VIEW("ello")));
     printf("To trim: \""VIEW_FMT"\"\tTrimmed: \""VIEW_FMT"\"\n", VIEW_ARG(T7), VIEW_ARG(T6));
 
     view T8 = view_Slice(T6, 2, 4);

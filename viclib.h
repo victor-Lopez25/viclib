@@ -172,15 +172,15 @@ typedef int16_t  s16;
 typedef int32_t  s32;
 typedef int64_t  s64;
 
-#ifndef bool
-typedef uint8_t  bool;
-#endif
 typedef uint32_t b32;
 typedef float f32;
 typedef double f64;
 
+#ifndef bool
+typedef uint8_t  bool;
 #define true 1
 #define false 0
+#endif
 
 // TODO: Print for different platforms
 #if defined(QUIET_ASSERT) || !defined(_INC_STDIO)
@@ -225,7 +225,7 @@ typedef struct {
     const char *Data;
     size_t Len;
 } view;
-#define VIEW(cstr_lit) view_FromParts(cstr_lit, sizeof(cstr_lit) - 1)
+#define VIEW(cstr_lit) view_FromParts((cstr_lit), sizeof(cstr_lit) - 1)
 #define VIEW_STATIC(cstr_lit) {(const char*)(cstr_lit), sizeof(cstr_lit) - 1}
 #define VIEW_FMT "%.*s"
 #define VIEW_ARG(v) (int)(v).Len, (v).Data
@@ -241,6 +241,8 @@ VIEWPROC view view_Slice(view A, size_t start, size_t end); // won't include end
 VIEWPROC int  view_Compare(view A, view B); // result = A - B
 VIEWPROC bool view_Eq(view A, view B);
 VIEWPROC bool view_StartsWith(view v, view Start);
+VIEWPROC int  view_Contains(view Haystack, view Needle); // result = index where needle is in haystack or -1
+#define view_EndWith view_EndsWith /* in case of singular/plural annoyance */
 VIEWPROC bool view_EndsWith(view v, view End);
 VIEWPROC view view_ChopByDelim(view *v, char Delim);
 VIEWPROC view view_ChopByView(view *v, view Delim); // full view is the delim
@@ -421,7 +423,7 @@ VIEWPROC int view_Compare(view A, view B)
         res = A.Data[i] - B.Data[i];
         if(res != 0) return res;
     }
-    return A.Len - B.Len;
+    return (int)A.Len - (int)B.Len;
 }
 
 VIEWPROC bool view_Eq(view A, view B)
@@ -434,6 +436,23 @@ VIEWPROC bool view_StartsWith(view v, view Start)
 {
     if(Start.Len > v.Len) return false;
     else return view_Eq(view_FromParts(v.Data, Start.Len), Start);
+}
+
+VIEWPROC int view_Contains(view Haystack, view Needle)
+{
+    if(Needle.Len > Haystack.Len) return -1;
+    else if(Needle.Len == Haystack.Len) {
+        return mem_compare(Haystack.Data, Needle.Data, Haystack.Len) == 0 ? 0 : -1;
+    }
+    
+    // TODO: IMPORTANT: Do this with a string-search algorithm which requires memory, but is O(n+m)
+    // NOTE: I can probably still do this O(n^2) when working with a small haystack (~5000 characters or less?)
+    // NOTE: wiki: https://en.wikipedia.org/wiki/Two-way_string-matching_algorithm
+    for(size_t i = 0; i < Haystack.Len - Needle.Len; i++)
+    {
+        if(mem_compare(Haystack.Data + i, Needle.Data, Needle.Len) == 0) return (int)i;
+    }
+    return -1;
 }
 
 VIEWPROC bool view_EndsWith(view v, view End)
