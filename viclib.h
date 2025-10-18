@@ -71,11 +71,6 @@ SOFTWARE.
 # define COMPILER_CL 1
 # define PRAGMA(x) __pragma(x)
 # define thread_local __declspec(thread)
-# if !defined(_MSVC_TRADITIONAL) || _MSVC_TRADITIONAL
-static_assert(0, "\nPlease use the compatible preprocessor for msvc\n"
-              "To use it, pass /Zc:preprocessor to msvc\n");
-#  error (This error is so the error messages stop here)
-# endif
 #elif defined(__clang__)
 # define COMPILER_CLANG 1
 # define PRAGMA(x) _Pragma(#x)
