@@ -362,14 +362,19 @@ char *std_ReadEntireFile(const char *file, size_t *size);
 
 #endif // stdio.h && (malloc.h || stdlib.h) included
 
-// introsort
+#ifndef VICLIB_NO_SORT
 bool int_less_than(const void *A, const void *B);
 
-void _SwapSize(void *A, void *B, size_t Size);
+#define VL_Swap(A,B) temp = (A); (A) = (B); (B) = temp
+#define VL_SwapType(A,B,T) VL_SwapSize(&(A), &(B), sizeof(T))
+void VL_SwapSize(void *A, void *B, size_t Size);
+// introsort
 void Sort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *));
-void _IntroSort(void *Data, size_t lo, size_t hi, int Depth, size_t ElementSize, bool (*less_than)(const void *, const void *));
-void _InsertionSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *));
-void _HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *));
+void VL_IntroSort(void *Data, size_t lo, size_t hi, int Depth, size_t ElementSize, bool (*less_than)(const void *, const void *));
+void VL_InsertionSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *));
+void VL_HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *));
+
+#endif // ifndef VICLIB_NO_SORT
 
 #ifdef VICLIB_IMPLEMENTATION
 
@@ -1036,24 +1041,25 @@ RESTORE_WARNINGS
 
 #endif // stdio.h && (malloc.h || stdlib.h) included
 
+#ifndef VICLIB_NO_SORT
+
 bool int_less_than(const void *A, const void *B) {
     return (*(int*)A < *(int*)B);
 }
 
-#define _Swap(A,B) temp = (A); (A) = (B); (B) = temp
-void _SwapSize(void *A, void *B, size_t Size)
+void VL_SwapSize(void *A, void *B, size_t Size)
 {
     size_t i;
-    if((uintptr_t)A % sizeof(u32) == 0 &&
-       (uintptr_t)B % sizeof(u32) == 0 &&
-       Size % sizeof(long) == 0)
+    if((uintptr_t)A % sizeof(size_t) == 0 &&
+       (uintptr_t)B % sizeof(size_t) == 0 &&
+       Size % sizeof(size_t) == 0)
     {
-        u32 temp;
-        u32 *APtr = (u32*)A;
-        u32 *BPtr = (u32*)B;
+        size_t temp;
+        size_t *APtr = (size_t*)A;
+        size_t *BPtr = (size_t*)B;
 
-        for(i = 0; i < Size/sizeof(u32); i++) {
-            _Swap(*APtr, *BPtr);
+        for(i = 0; i < Size/sizeof(size_t); i++) {
+            VL_Swap(*APtr, *BPtr);
             APtr++; BPtr++;
         }
     }
@@ -1063,7 +1069,7 @@ void _SwapSize(void *A, void *B, size_t Size)
         char *BPtr = (char*)B;
 
         for(i = 0; i < Size; i++) {
-            _Swap(*APtr, *BPtr);
+            VL_Swap(*APtr, *BPtr);
             APtr++; BPtr++;
         }
     }
@@ -1075,21 +1081,21 @@ void Sort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const 
     // compute MaxDepth = 2*log_2(Count)
     int MaxDepth = -2;
     for(size_t i = Count; i != 0; i >>= 1) MaxDepth += 2;
-    _IntroSort(Data, 0, Count - 1, MaxDepth, ElementSize, less_than);
+    VL_IntroSort(Data, 0, Count - 1, MaxDepth, ElementSize, less_than);
 }
-void _IntroSort(void *Data, size_t lo, size_t hi, int Depth, size_t ElementSize, bool (*less_than)(const void *, const void *))
+void VL_IntroSort(void *Data, size_t lo, size_t hi, int Depth, size_t ElementSize, bool (*less_than)(const void *, const void *))
 {
     if(lo < hi) {
         if((hi - lo + 1) < 16) {
-            _InsertionSort((u8*)Data + lo*ElementSize, hi - lo + 1, ElementSize, less_than);
+            VL_InsertionSort((u8*)Data + lo*ElementSize, hi - lo + 1, ElementSize, less_than);
         }
         else if(Depth == 0) {
-            _HeapSort((u8*)Data + lo*ElementSize, hi - lo + 1, ElementSize, less_than);
+            VL_HeapSort((u8*)Data + lo*ElementSize, hi - lo + 1, ElementSize, less_than);
         }
         else {
             size_t PivotIdx = (lo + hi)/2; // median of 3 could be better here, I'm not sure
 
-            _SwapSize((u8*)Data + PivotIdx*ElementSize, (u8*)Data + lo*ElementSize, ElementSize);
+            VL_SwapSize((u8*)Data + PivotIdx*ElementSize, (u8*)Data + lo*ElementSize, ElementSize);
             void *Pivot = (u8*)Data + lo*ElementSize;
 
             size_t i = lo + 1;
@@ -1097,21 +1103,21 @@ void _IntroSort(void *Data, size_t lo, size_t hi, int Depth, size_t ElementSize,
             {
                 if(less_than((u8*)Data + j*ElementSize, Pivot)) {
                     // swap(Arr[i], Arr[j]);
-                    _SwapSize((u8*)Data + i*ElementSize, (u8*)Data + j*ElementSize, ElementSize);
+                    VL_SwapSize((u8*)Data + i*ElementSize, (u8*)Data + j*ElementSize, ElementSize);
                     i++;
                 }
             }
             // swap(Arr[lo], Arr[i-1]);
-            _SwapSize((u8*)Data + lo*ElementSize, (u8*)Data + (i-1)*ElementSize, ElementSize);
+            VL_SwapSize((u8*)Data + lo*ElementSize, (u8*)Data + (i-1)*ElementSize, ElementSize);
             PivotIdx = i - 1;
 
-            if(PivotIdx > 0) _IntroSort(Data, lo, PivotIdx - 1, Depth - 1, ElementSize, less_than);
-            _IntroSort(Data, PivotIdx + 1, hi, Depth - 1, ElementSize, less_than);
+            if(PivotIdx > 0) VL_IntroSort(Data, lo, PivotIdx - 1, Depth - 1, ElementSize, less_than);
+            VL_IntroSort(Data, PivotIdx + 1, hi, Depth - 1, ElementSize, less_than);
         }
     }
 }
 
-void _InsertionSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
+void VL_InsertionSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
 {
     for(size_t i = 1; i < Count; i++)
     {
@@ -1125,7 +1131,7 @@ void _InsertionSort(void *Data, size_t Count, size_t ElementSize, bool (*less_th
         mem_copy((u8*)Data + (j+1)*ElementSize, Val, ElementSize);
     }
 }
-void _HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
+void VL_HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
 {
     // left child = 2*i + 1
     // right child = 2*i + 2
@@ -1140,7 +1146,7 @@ void _HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(c
             }
             
             if(less_than((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize)) {
-                _SwapSize((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize, ElementSize);
+                VL_SwapSize((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize, ElementSize);
                 Root = Child;
             } else {
                 break;
@@ -1149,7 +1155,7 @@ void _HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(c
     }
     
     for(size_t End = Count - 1; End > 0; End--) {
-        _SwapSize(Data, (u8*)Data + End*ElementSize, ElementSize);
+        VL_SwapSize(Data, (u8*)Data + End*ElementSize, ElementSize);
         
         size_t Root = 0;
         while(2*Root + 1 < End) {
@@ -1159,7 +1165,7 @@ void _HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(c
             }
             
             if(less_than((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize)) {
-                _SwapSize((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize, ElementSize);
+                VL_SwapSize((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize, ElementSize);
                 Root = Child;
             } else {
                 break;
@@ -1167,6 +1173,6 @@ void _HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(c
         }
     }
 }
-
+#endif // ifndef VICLIB_NO_SORT
 #endif // VICLIB_IMPLEMENTATION
 #endif //VICLIB_H
