@@ -1,17 +1,22 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
 --Usage:
--Defines: To have any of these take effect, you must define them _before_ including this file
-VICLIB_IMPLEMENTATION if you want to have the implementation
-READ_ENTIRE_FILE_MAX if you want to have a max file read size
-QUIET_ASSERT if you want the assertions to add a breakpoint but not print
-RELEASE_MODE to have some stuff work faster, right now, assertions get compiled out when this is defined
--Check ErrorNumber when errors occur.
+Defines: To have any of these take effect, you must define them _before_ including this file
+ - VICLIB_IMPLEMENTATION: if you want to have the implementation (only in one file)
+ - READ_ENTIRE_FILE_MAX: If you want to have a max file read size, default is 0xFFFFFFFF (4GB)
+ - QUIET_ASSERT: If you want the assertions to add a breakpoint but not print
+ - RELEASE_MODE: Have some stuff work faster, right now, assertions get compiled out when this is defined
+ - VICLIB_PROC: define to 'static' or some kind of export as needed
+ - VICLIB_TEMP_SIZE: ArenaTemp size, default is 4*1024*1024 bytes
+ - VICLIB_NO* if you want to remove parts of the library:
+   - VICLIB_NO_TEMP_ARENA
+   - VICLIB_NO_SORT
+Check ErrorNumber when errors occur.
 
 --Many thanks to the inspirations for this library:
-- Mr4th's 4ed_base_types.h - https://mr-4th.itch.io/4coder (find the file in 'custom' directory)
-- stb header-only libraries - https://github.com/nothings/stb
-- tsoding's string view implementation - https://github.com/tsoding/sv
+ - Mr4th's 4ed_base_types.h - https://mr-4th.itch.io/4coder (find the file in 'custom' directory)
+ - stb header-only libraries - https://github.com/nothings/stb
+ - tsoding's string view implementation - https://github.com/tsoding/sv
 
 I modified tsoding's string view so that it doesn't use the stdlib by implementing the couple
 functions it uses
@@ -180,8 +185,8 @@ typedef int32_t  s32;
 typedef int64_t  s64;
 
 typedef uint32_t b32;
-typedef float f32;
-typedef double f64;
+typedef float    f32;
+typedef double   f64;
 
 #ifndef bool
 typedef uint8_t  bool;
@@ -190,17 +195,19 @@ typedef uint8_t  bool;
 #endif
 
 // TODO: Print for different platforms
-#if defined(QUIET_ASSERT) || !defined(_INC_STDIO)
-# define AssertAlways(e) do{ if(!(e)) { *(int*)0=0xA403; } }while(0)
-# define AssertMsgAlways(e, msg) AssertAlways(e)
-#else
-# define AssertAlways(e) do{ if(!(e)){ \
+#if !defined(AssertAlways) || !defined(AssertMsgAlways)
+# if defined(QUIET_ASSERT) || !defined(_INC_STDIO)
+#  define AssertAlways(e) do{ if(!(e)) { *(int*)0=0xA403; } }while(0)
+#  define AssertMsgAlways(e, msg) AssertAlways(e)
+# else
+#  define AssertAlways(e) do{ if(!(e)){ \
 printf(__FILE__"("stringify(__LINE__)"): Assert fail: "#e "\n"); \
 fflush(stdout); DebugBreakpoint; } }while(0)
-# define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
+#  define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
 printf(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
 fflush(stdout); DebugBreakpoint; } }while(0)
-#endif
+# endif
+#endif // !defined(AssertAlways) || !defined(AssertMsgAlways)
 
 #if RELEASE_MODE
 # define Assert(expr)
@@ -220,8 +227,8 @@ thread_local u32 ErrorNumber = 0;
 // intrinsics
 ////////////////////////////////
 
-void mem_copy_non_overlapping(void *dst, const void *src, size_t len);
-void mem_copy(void *dst, const void *src, size_t len);
+VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len);
+VLIBPROC void mem_copy(void *dst, const void *src, size_t len);
 #define ZeroStruct(S) mem_zero(&(S), sizeof(S))
 VLIBPROC void mem_zero(void *data, size_t len);
 VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count);
@@ -295,6 +302,19 @@ typedef struct {
     memory_arena *Arena;
     size_t StartMemOffset;
 } scratch_arena;
+
+#ifndef VICLIB_NO_TEMP_ARENA
+# ifndef VICLIB_TEMP_SIZE
+#  define VICLIB_TEMP_SIZE (4*1024*1024)
+# endif // !defined(VICLIB_TEMP_SIZE)
+static u8 ViclibTempMem[VICLIB_TEMP_SIZE] = {0};
+memory_arena ArenaTemp = {
+    .Size = VICLIB_TEMP_SIZE,
+    .Base = ViclibTempMem,
+    .Used = 0,
+    .ScratchCount = 0,
+};
+#endif // !defined(VICLIB_NO_TEMP_ARENA)
 
 #ifndef ARENAPROC
 # define ARENAPROC VLIBPROC
@@ -374,7 +394,7 @@ void VL_IntroSort(void *Data, size_t lo, size_t hi, int Depth, size_t ElementSiz
 void VL_InsertionSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *));
 void VL_HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *));
 
-#endif // ifndef VICLIB_NO_SORT
+#endif // !defined(VICLIB_NO_SORT)
 
 #ifdef VICLIB_IMPLEMENTATION
 
@@ -1173,6 +1193,6 @@ void VL_HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)
         }
     }
 }
-#endif // ifndef VICLIB_NO_SORT
+#endif // !defined(VICLIB_NO_SORT)
 #endif // VICLIB_IMPLEMENTATION
 #endif //VICLIB_H
