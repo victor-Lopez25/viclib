@@ -2,6 +2,14 @@
 
 Header-only library which does some basic stuff you might want in a lot of programs
 
+Includes:
+ - String view implementation (view_* functions)
+ - Assertions
+ - Simple memory functions (mem_copy, mem_zero, mem_compare)
+ - Arena implementation
+ - ReadEntireFile when using stdlib or windows.h
+ - Sort() which performs an introsort
+
 To download the header only:
 ```console
 wget -O viclib.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/src/viclib.h

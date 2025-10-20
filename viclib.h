@@ -248,7 +248,7 @@ typedef struct {
 # define VIEWPROC VLIBPROC
 #endif
 
-int is_space(int _c);
+int is_space(int _c); // only checks ascii space characters
 VIEWPROC view view_FromParts(const char *Data, size_t Count);
 VIEWPROC view view_FromCstr(const char *Cstr);
 VIEWPROC view view_Slice(view A, size_t start, size_t end); // won't include end -> [start, end)
