@@ -262,7 +262,7 @@ VIEWPROC view view_Slice(view A, size_t start, size_t end); // won't include end
 VIEWPROC int  view_Compare(view A, view B); // result = A - B
 VIEWPROC bool view_Eq(view A, view B);
 VIEWPROC bool view_StartsWith(view v, view Start);
-VIEWPROC int  view_Contains(view Haystack, view Needle); // result = index where needle is in haystack or -1
+VIEWPROC const char *view_Contains(view Haystack, view Needle); // result = pointer to where the needle is in haystack or null
 #define view_EndWith view_EndsWith /* in case of singular/plural annoyance */
 VIEWPROC bool view_EndsWith(view v, view End);
 VIEWPROC view view_ChopByDelim(view *v, char Delim);
@@ -477,11 +477,12 @@ VIEWPROC bool view_StartsWith(view v, view Start)
     else return view_Eq(view_FromParts(v.Data, Start.Len), Start);
 }
 
-VIEWPROC int view_Contains(view Haystack, view Needle)
+VIEWPROC const char *view_Contains(view Haystack, view Needle)
 {
-    if(Needle.Len > Haystack.Len) return -1;
+    if(Needle.Len > Haystack.Len) return 0;
     else if(Needle.Len == Haystack.Len) {
-        return mem_compare(Haystack.Data, Needle.Data, Haystack.Len) == 0 ? 0 : -1;
+        return mem_compare(Haystack.Data, Needle.Data, Haystack.Len) == 0 ?
+            Haystack.Data : 0;
     }
     
     // TODO: IMPORTANT: Do this with a string-search algorithm which requires memory, but is O(n+m)
@@ -489,9 +490,9 @@ VIEWPROC int view_Contains(view Haystack, view Needle)
     // NOTE: wiki: https://en.wikipedia.org/wiki/Two-way_string-matching_algorithm
     for(size_t i = 0; i < Haystack.Len - Needle.Len; i++)
     {
-        if(mem_compare(Haystack.Data + i, Needle.Data, Needle.Len) == 0) return (int)i;
+        if(mem_compare(Haystack.Data + i, Needle.Data, Needle.Len) == 0) return Haystack.Data + i;
     }
-    return -1;
+    return 0;
 }
 
 VIEWPROC bool view_EndsWith(view v, view End)
