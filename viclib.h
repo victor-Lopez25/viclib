@@ -227,11 +227,18 @@ thread_local u32 ErrorNumber = 0;
 // intrinsics
 ////////////////////////////////
 
+#if defined(_INC_STRING)
+# define mem_copy_non_overlapping(dst, src, len) memcpy(dst, src, len)
+# define mem_copy(dst, src, len) memmove(dst, src, len)
+# define mem_zero(data, len) memset(data, 0, len)
+# define mem_compare(str1, str2, count) memcmp(str1, str2, count)
+#else
 VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len);
 VLIBPROC void mem_copy(void *dst, const void *src, size_t len);
-#define ZeroStruct(S) mem_zero(&(S), sizeof(S))
 VLIBPROC void mem_zero(void *data, size_t len);
 VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count);
+#endif
+#define ZeroStruct(S) mem_zero(&(S), sizeof(S))
 
 ////////////////////////////////
 
@@ -766,6 +773,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
 
 ////////////////////////////////
 
+#if !defined(_INC_STRING)
 #define VCL_ALIGN (sizeof(size_t)-1)
 VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len)
 {
@@ -865,6 +873,7 @@ VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
     }
     return 0;
 }
+#endif // !defined(_INC_STRING)
 
 ////////////////////////////////
 
