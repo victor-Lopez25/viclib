@@ -15,6 +15,6 @@ cl %defines% %opts% %code%\test_mem.c -Fetest_mem.exe /link -incremental:no -opt
 ::macro_test.exe
 
 ::test.exe
-::test_windows.exe
+test_windows.exe
 ::test_mem.exe
 popd

@@ -869,11 +869,11 @@ VLIBPROC void mem_zero(void *data, size_t len)
 {
     size_t i;
 
-    if ((uintptr_t)data % sizeof(long) == 0 &&
-        len % sizeof(long) == 0) {
-        long *d = (long*)data;
+    if ((uintptr_t)data % sizeof(size_t) == 0 &&
+        len % sizeof(size_t) == 0) {
+        size_t *d = (size_t*)data;
 
-        for(i = 0; i < len/sizeof(long); i++) {
+        for(i = 0; i < len/sizeof(size_t); i++) {
             d[i] = 0;
         }
     }

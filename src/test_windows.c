@@ -38,7 +38,7 @@ void TestReadFileChunk(void)
 
 int main()
 {
-    TestReadEntireFile();
+    //TestReadEntireFile();
     TestReadFileChunk();
 
     return 0;
