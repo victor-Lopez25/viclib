@@ -354,7 +354,6 @@ ARENAPROC void *ArenaPushSize_Opt(ArenaPushSize_opts opt);
 
 ////////////////////////////////
 
-// IMPORTANT: Only check ErrorNumber when return is null (0)
 #define ERROR_READ_UNKNOWN 1
 #define ERROR_READ_FILE_NOT_FOUND 2
 #define ERROR_READ_ACCESS_DENIED 3
@@ -365,18 +364,40 @@ ARENAPROC void *ArenaPushSize_Opt(ArenaPushSize_opts opt);
 #define READ_ENTIRE_FILE_MAX 0xFFFFFFFF
 #endif
 
+typedef struct file_chunk file_chunk;
+
 // char *ReadEntireFile(const char *File, size_t *Size);
-#define ReadEntireFile(A, B) (char*)0; (void)B; \
+#define ReadEntireFile(File, Size) (void)File; (void)Size; \
 AssertMsgAlways(false, "To use 'ReadEntireFile' you must include both stdlib.h and stdio.h or either windows.h or fileapi.h (windows api)")
+// bool ReadFileChunk(file_chunk *Chunk, u8 **Mem, u32 *ChunkSize);
+#define ReadFileChunk(Chunk, File, ChunkSize) /* (void)Chunk; */\
+AssertMsgAlways(false, "To use 'ReadFileChunk' you must include both stdlib.h and stdio.h or either windows.h or fileapi.h (windows api)")
 
 #if defined(_APISETFILE_) // windows fileapi.h included
+
+struct file_chunk {
+    HANDLE File;
+    size_t RemainingFileSize;
+    u8 *Buffer;
+    u32 BufferSize;
+};
 
 #undef ReadEntireFile
 #define ReadEntireFile win32_ReadEntireFile
 char *win32_ReadEntireFile(const char *File, size_t *Size);
+#undef ReadFileChunk
+#define ReadFileChunk win32_ReadFileChunk
+bool win32_ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
 
 // windows fileapi.h included
 #elif defined(_INC_STDIO) && (defined(_INC_MALLOC) || defined(_INC_STDLIB))
+
+struct file_chunk {
+    FILE *File;
+    size_t RemainingFileSize;
+    u8 *Buffer;
+    u32 BufferSize;
+};
 
 #undef ReadEntireFile
 #define ReadEntireFile std_ReadEntireFile
@@ -386,6 +407,9 @@ char *win32_ReadEntireFile(const char *File, size_t *Size);
 // ERROR_READ_NO_MEM - malloc failed
 // ERROR_READ_FILE_TOO_BIG - READ_ENTIRE_FILE_MAX exceeded
 char *std_ReadEntireFile(const char *file, size_t *size);
+#undef ReadFileChunk
+#define ReadFileChunk std_ReadFileChunk
+bool std_ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
 
 #endif // stdio.h && (malloc.h || stdlib.h) included
 
@@ -1006,6 +1030,53 @@ char *win32_ReadEntireFile(const char *File, size_t *Size)
 
 RESTORE_WARNINGS
 
+bool win32_ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
+{
+    AssertMsg(Chunk->Buffer && Chunk->BufferSize, "Requires a valid buffer and a buffer size");
+    ErrorNumber = 0;
+
+    if(!Chunk->File) {
+        Chunk->File = CreateFileA(File, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+        if(Chunk->File == INVALID_HANDLE_VALUE) {
+            DWORD Error = GetLastError();
+            switch(Error) {
+                case ERROR_INVALID_DRIVE: fallthrough;
+                case ERROR_PATH_NOT_FOUND: fallthrough;
+                case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
+                case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_READ_ACCESS_DENIED; break;
+
+                default: ErrorNumber = ERROR_READ_UNKNOWN; break;
+            }
+            return false;
+        }
+
+        LARGE_INTEGER FileSize;
+        if(GetFileSizeEx(Chunk->File, &FileSize) == 0) {
+            ErrorNumber = ERROR_READ_UNKNOWN; // TODO: find out why it failed
+            return false;
+        }
+
+        Chunk->RemainingFileSize = FileSize.QuadPart;
+    } else if(Chunk->RemainingFileSize == 0) {
+        CloseHandle(Chunk->File);
+        Chunk->File = 0;
+        return false;
+    }
+    size_t OutSize = min(Chunk->RemainingFileSize, (size_t)Chunk->BufferSize);
+
+    DWORD BytesRead;
+    if(ReadFile(Chunk->File, Chunk->Buffer, (u32)OutSize, &BytesRead, 0) && (OutSize == BytesRead))
+    {
+        *ChunkSize = (u32)OutSize;
+    } else {
+        ErrorNumber = ERROR_READ_UNKNOWN;
+        return false;
+    }
+
+    Chunk->RemainingFileSize -= (u32)OutSize;
+    return true;
+}
+
 // windows fileapi.h included
 #elif defined(_INC_STDIO) && (defined(_INC_MALLOC) || defined(_INC_STDLIB))
 
@@ -1068,6 +1139,55 @@ char *std_ReadEntireFile(const char *file, size_t *size)
 }
 
 RESTORE_WARNINGS
+
+bool std_ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
+{
+    AssertMsg(Chunk->Buffer && Chunk->BufferSize, "Requires a valid buffer and a buffer size");
+    ErrorNumber = 0;
+
+    if(!Chunk->File) {
+        Chunk->File = fopen(File, "rb");
+        if(!Chunk->File) {
+            ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
+            return false;
+        }
+
+        if(fseek(Chunk->File, 0, SEEK_END) < 0) {
+            ErrorNumber = ERROR_READ_UNKNOWN;
+            return false;
+        }
+
+        long m = ftell(Chunk->File);
+        if(m < 0) {
+            ErrorNumber = ERROR_READ_UNKNOWN;
+            return false;
+        }
+
+        if(fseek(Chunk->File, 0, SEEK_SET) < 0) {
+            ErrorNumber = ERROR_READ_UNKNOWN;
+            return false;
+        }
+
+        Chunk->RemainingFileSize = m;
+    } else if(Chunk->RemainingFileSize == 0) {
+        // Success
+        fclose(Chunk->File);
+        Chunk->File = 0;
+        return false;
+    }
+    size_t OutSize = min(Chunk->RemainingFileSize, (size_t)Chunk->BufferSize);
+
+    if(OutSize == fread(Chunk->Buffer, 1, (u32)OutSize, Chunk->File))
+    {
+        *ChunkSize = (u32)OutSize;
+    } else {
+        ErrorNumber = ERROR_READ_UNKNOWN;
+        return false;
+    }
+
+    Chunk->RemainingFileSize -= (u32)OutSize;
+    return true;
+}
 
 #endif // stdio.h && (malloc.h || stdlib.h) included
 
