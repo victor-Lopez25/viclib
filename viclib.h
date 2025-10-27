@@ -366,6 +366,12 @@ ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena);
 
 ////////////////////////////////
 
+#ifdef RADDBG_MARKUP_H
+raddbg_type_view(view, array($.Data, $.Len));
+#endif // RADDBG_MARKUP_H
+
+////////////////////////////////
+
 #define ERROR_READ_UNKNOWN 1
 #define ERROR_READ_FILE_NOT_FOUND 2
 #define ERROR_READ_ACCESS_DENIED 3

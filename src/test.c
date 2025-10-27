@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "raddbg_markup.h"
+
 #define VICLIB_IMPLEMENTATION
 #include "../viclib.h"
 
