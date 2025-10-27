@@ -26,7 +26,7 @@ To have any of these take effect, you must define them _before_ including this f
  - QUIET_ASSERT: If you want the assertions to add a breakpoint but not print
  - RELEASE_MODE: Have some stuff work faster, right now, assertions get compiled out when this is defined
  - VICLIB_PROC: Define to 'static' or some kind of export as needed
- - VICLIB_TEMP_SIZE: ArenaTemp size, default is 4*1024*1024 bytes
+ - VICLIB_TEMP_SIZE: ArenaTemp size, default is 4\*1024\*1024 bytes
  - VICLIB_NO*: If you want to remove parts of the library:
    - VICLIB_NO_TEMP_ARENA: remove ArenaTemp
    - VICLIB_NO_SORT: remove Sort and all functions used by it
