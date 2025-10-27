@@ -7,7 +7,7 @@ Includes:
  - Assertions
  - Simple memory functions (mem_copy, mem_zero, mem_compare)
  - Arena implementation
- - ReadEntireFile when using stdlib or windows.h
+ - ReadEntireFile and ReadFileChunk when using stdlib or windows.h
  - Sort() which performs an introsort
 
 To download the header only:
