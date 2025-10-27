@@ -303,6 +303,7 @@ typedef struct {
     size_t Used;
 
     s32 ScratchCount;
+    s32 SplitCount;
 } memory_arena;
 
 typedef struct {
@@ -327,30 +328,41 @@ memory_arena ArenaTemp = {
 # define ARENAPROC VLIBPROC
 #endif
 
-typedef struct {
+struct ArenaGetRemaining_opts {
     memory_arena *Arena;
     size_t Alignment;
-} ArenaGetRemaining_opts;
-typedef struct {
+};
+struct ArenaPushSize_opts {
     memory_arena *Arena;
     size_t RequestSize;
     size_t Alignment;
-} ArenaPushSize_opts;
+};
+struct ArenaSplit_opts {
+    memory_arena *Arena;
+    memory_arena *SplitArena;
+    size_t SplitSize;
+};
 
 // NOTE: Thanks Vjekoslav for the idea! (https://twitter.com/vkrajacic/status/1749816169736073295)
 
-#define ArenaGetRemaining(Arena, ...) ArenaGetRemaining_Opt((ArenaGetRemaining_opts){(Arena), __VA_ARGS__})
-#define ArenaPushSize(Arena, size, ...) ArenaPushSize_Opt((ArenaPushSize_opts){(Arena), (size), __VA_ARGS__})
-#define PushStruct(Arena, type, ...) ArenaPushSize_Opt((ArenaPushSize_opts){(Arena), sizeof(type), __VA_ARGS__})
-#define PushArray(Arena, count, type, ...) ArenaPushSize_Opt((ArenaPushSize_opts){(Arena), (count)*sizeof(type), __VA_ARGS__})
-#define ArenaClear(Arena, ZeroMem) if(ZeroMem) {mem_zero((Arena)->Base, (Arena)->Size);} (Arena)->Used = 0
+#define ArenaGetRemaining(arena, ...) ArenaGetRemaining_Opt((struct ArenaGetRemaining_opts){.Arena = (arena), __VA_ARGS__})
+#define ArenaPushSize(arena, size, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = (arena), .RequestSize = (size), __VA_ARGS__})
+#define PushStruct(arena, type, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = (arena), .RequestSize = sizeof(type), __VA_ARGS__})
+#define PushArray(arena, count, type, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = (arena), .RequestSize = (count)*sizeof(type), __VA_ARGS__})
+#define ArenaClear(arena, ZeroMem) if(ZeroMem) {mem_zero((arena)->Base, (arena)->Size);} (arena)->Used = 0
+/*  Split arenas work like a stack, you must rejoin them as first in last out.
+    When you call ArenaSplit, it will remove the size requested from the original at (Base + Size - SplitSize)
+    Calling ArenaSplit without SplitSize will split the arena into two equal parts (*they could be different sizes due to alignment) */
+#define ArenaSplit(arena, split, ...) ArenaSplit_Opt((struct ArenaSplit_opts){.Arena = (arena), .SplitArena = (split), __VA_ARGS__})
 ARENAPROC void ArenaInit(memory_arena *Arena, size_t Size, void *Base);
 ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena);
 ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem);
 ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment);
 
-ARENAPROC size_t ArenaGetRemaining_Opt(ArenaGetRemaining_opts opts);
-ARENAPROC void *ArenaPushSize_Opt(ArenaPushSize_opts opt);
+ARENAPROC size_t ArenaGetRemaining_Opt(struct ArenaGetRemaining_opts opt);
+ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt);
+ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt);
+ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena);
 
 ////////////////////////////////
 
@@ -921,14 +933,14 @@ ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment)
     return AlignOffset;
 }
 
-ARENAPROC size_t ArenaGetRemaining_Opt(ArenaGetRemaining_opts opt)
+ARENAPROC size_t ArenaGetRemaining_Opt(struct ArenaGetRemaining_opts opt)
 {
     if(opt.Alignment < 1) opt.Alignment = 1;
     size_t Result = opt.Arena->Size - (opt.Arena->Used + ArenaGetAlignmentOffset(opt.Arena, opt.Alignment));
     return Result;
 }
 
-ARENAPROC void *ArenaPushSize_Opt(ArenaPushSize_opts opt)
+ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt)
 {
     if(opt.Alignment < 1) opt.Alignment = 1;
     size_t Size = opt.RequestSize;
@@ -940,6 +952,31 @@ ARENAPROC void *ArenaPushSize_Opt(ArenaPushSize_opts opt)
     opt.Arena->Used += Size;
 
     return Mem;
+}
+
+ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt)
+{
+    AssertMsg(opt.Arena->Size > opt.SplitSize, "Need more memory in arena to split to requested size");
+    if(opt.SplitSize == 0) opt.SplitSize = ArenaGetRemaining(opt.Arena) / 2;
+
+    opt.Arena->SplitCount++;
+    opt.Arena->Size = opt.Arena->Size - opt.SplitSize;
+
+    opt.SplitArena->Base = opt.Arena->Base + opt.SplitSize;
+    opt.SplitArena->Size = opt.SplitSize;
+    ArenaPushSize(opt.SplitArena, 0, .Alignment = 4); // 'leak' up to 4 bytes here to keep the memory aligned
+}
+
+ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena)
+{
+    AssertMsg(Arena->SplitCount > 0, "This split arena doesn't belong to the arena");
+    AssertMsg(Arena->Base + Arena->Size == SplitArena->Base, "Split arenas must be rejoined as a stack; first in last out");
+    AssertMsg(SplitArena->ScratchCount == 0, "Rejoining a split arena without Ending all its scratch arenas will cause conflicts with the original arena");
+    AssertMsg(SplitArena->SplitCount == 0, "Rejoining a split arena without rejoining its split arenas will cause memory leaks");
+    SplitArena->Base = 0;
+    SplitArena->Used = 0;
+    Arena->Size += SplitArena->Size;
+    Arena->SplitCount--;
 }
 
 ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena)
