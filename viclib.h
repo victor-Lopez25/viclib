@@ -145,8 +145,8 @@ extern void __cdecl __debugbreak(void);
 #endif
 
 #if COMPILER_GCC || COMPILER_CLANG
-// gcc and cl (haven't tried clang
-// don't understand how functions like win32_ReadEntireFile work
+// gcc and cl (haven't tried clang)
+// don't understand how functions like ReadEntireFile work
 // but I want to keep the warnings for other functions
 # define PUSH_IGNORE_UNINITIALIZED PRAGMA(GCC diagnostic push) PRAGMA(GCC diagnostic ignored "-Wuninitialized")
 # define RESTORE_WARNINGS PRAGMA(GCC diagnostic pop)
