@@ -402,11 +402,11 @@ typedef struct {
     size_t RemainingFileSize;
 } file_chunk;
 
+bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
+
 #if (defined(_APISETFILE_) && defined(_MEMORYAPI_H_)) || (defined(_INC_STDIO) && defined(malloc)) || (defined(VL_FILE_LINUX) && defined(mmap))
 char *ReadEntireFile(const char *File, size_t *Size);
 #endif
-
-bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
 
 #else
 
