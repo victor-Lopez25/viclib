@@ -629,6 +629,7 @@ int _digit_val(int c)
 VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
 {
     AssertMsg(Result != 0, "Result parameter must be a valid pointer");
+    v = view_TrimLeft(v);
     if(v.Len == 0) return false;
 
     bool Neg = false;
@@ -696,6 +697,7 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
 int view_ParseF64(view v, f64 *Result, view *Remaining)
 {
     AssertMsg(Result != 0, "Result parameter must be a valid pointer");
+    v = view_TrimLeft(v);
     if(v.Len == 0) return PARSE_FAIL;
     bool DecimalPart = false;
 
