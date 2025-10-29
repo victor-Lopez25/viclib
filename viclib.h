@@ -326,19 +326,6 @@ typedef struct {
     size_t StartMemOffset;
 } scratch_arena;
 
-#ifndef VICLIB_NO_TEMP_ARENA
-# ifndef VICLIB_TEMP_SIZE
-#  define VICLIB_TEMP_SIZE (4*1024*1024)
-# endif // !defined(VICLIB_TEMP_SIZE)
-static u8 ViclibTempMem[VICLIB_TEMP_SIZE] = {0};
-memory_arena ArenaTemp = {
-    .Size = VICLIB_TEMP_SIZE,
-    .Base = ViclibTempMem,
-    .Used = 0,
-    .ScratchCount = 0,
-};
-#endif // !defined(VICLIB_NO_TEMP_ARENA)
-
 #ifndef ARENAPROC
 # define ARENAPROC VLIBPROC
 #endif
@@ -930,6 +917,19 @@ VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
 #endif // !defined(_INC_STRING)
 
 ////////////////////////////////
+
+#ifndef VICLIB_NO_TEMP_ARENA
+# ifndef VICLIB_TEMP_SIZE
+#  define VICLIB_TEMP_SIZE (4*1024*1024)
+# endif // !defined(VICLIB_TEMP_SIZE)
+static u8 ViclibTempMem[VICLIB_TEMP_SIZE] = {0};
+memory_arena ArenaTemp = {
+    .Size = VICLIB_TEMP_SIZE,
+    .Base = ViclibTempMem,
+    .Used = 0,
+    .ScratchCount = 0,
+};
+#endif // !defined(VICLIB_NO_TEMP_ARENA)
 
 ARENAPROC void ArenaInit(memory_arena *Arena, size_t Size, void *Base)
 {
