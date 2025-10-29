@@ -115,7 +115,9 @@ SOFTWARE.
 
 /* DebugBreakpoint for different platforms.
 Implementation by SDL3 (sdl wiki says SDL2 also had this but code says since SDL3.1.3) */
-#if defined(_MSC_VER)
+#if defined(SDL_h_)
+# define DebugBreakpoint SDL_TriggerBreakpoint()
+#elif defined(_MSC_VER)
 /* Don't include intrin.h here because it contains C++ code */
 extern void __cdecl __debugbreak(void);
 # define DebugBreakpoint __debugbreak()
@@ -195,17 +197,25 @@ typedef uint8_t  bool;
 #endif
 
 // TODO: Print for different platforms
+
 #if !defined(AssertAlways) || !defined(AssertMsgAlways)
-# if defined(QUIET_ASSERT) || !defined(_INC_STDIO)
-#  define AssertAlways(e) do{ if(!(e)) { *(int*)0=0xA403; } }while(0)
+# if defined(QUIET_ASSERT)
+#  define AssertAlways(e) do{ if(!(e)) { DebugBreakpoint; } }while(0)
 #  define AssertMsgAlways(e, msg) AssertAlways(e)
-# else
+# elif defined(SDL_h_)
 #  define AssertAlways(e) do{ if(!(e)){ \
-printf(__FILE__"("stringify(__LINE__)"): Assert fail: "#e "\n"); \
-fflush(stdout); DebugBreakpoint; } }while(0)
+        SDL_Log(__FILE__"("stringify(__LINE__)"): Assert fail: "#e "\n"); \
+        DebugBreakpoint; } }while(0)
 #  define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
-printf(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
-fflush(stdout); DebugBreakpoint; } }while(0)
+        SDL_Log(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
+        DebugBreakpoint; } }while(0)
+# elif defined(_INC_STDIO)
+#  define AssertAlways(e) do{ if(!(e)){ \
+        printf(__FILE__"("stringify(__LINE__)"): Assert fail: "#e "\n"); \
+        fflush(stdout); DebugBreakpoint; } }while(0)
+#  define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
+        printf(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
+        fflush(stdout); DebugBreakpoint; } }while(0)
 # endif
 #endif // !defined(AssertAlways) || !defined(AssertMsgAlways)
 
@@ -232,6 +242,11 @@ thread_local u32 ErrorNumber = 0;
 # define mem_copy(dst, src, len) memmove(dst, src, len)
 # define mem_zero(data, len) memset(data, 0, len)
 # define mem_compare(str1, str2, count) memcmp(str1, str2, count)
+#elif defined(SDL_h_)
+# define mem_copy_non_overlapping(dst, src, len) SDL_memcpy(dst, src, len)
+# define mem_copy(dst, src, len) SDL_memmove(dst, src, len)
+# define mem_zero(data, len) SDL_memset(data, 0, len)
+# define mem_compare(str1, str2, count) SDL_memcmp(str1, str2, count)
 #else
 VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len);
 VLIBPROC void mem_copy(void *dst, const void *src, size_t len);
@@ -368,6 +383,10 @@ ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena);
 
 #ifdef RADDBG_MARKUP_H
 raddbg_type_view(view, array($.Data, $.Len));
+#if defined(SDL_h_)
+raddbg_type_view(SDL_Surface, $.format == SDL_PixelFormat.SDL_PIXELFORMAT_RGBA32 ? 
+    bitmap($.pixels, $.w, $.h, RGBA32) : $)
+#endif
 #endif // RADDBG_MARKUP_H
 
 ////////////////////////////////
