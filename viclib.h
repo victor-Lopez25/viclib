@@ -374,7 +374,7 @@ ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena);
 raddbg_type_view(view, array($.Data, $.Len));
 #if defined(SDL_h_)
 raddbg_type_view(SDL_Surface, $.format == SDL_PixelFormat.SDL_PIXELFORMAT_RGBA32 ? 
-    bitmap($.pixels, $.w, $.h, RGBA32) : $)
+    bitmap($.pixels, $.w, $.h, RGBA32) : $);
 #endif
 #endif // RADDBG_MARKUP_H
 
