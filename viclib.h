@@ -352,7 +352,7 @@ struct ArenaSplit_opts {
 #define PushStruct(arena, type, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = (arena), .RequestSize = sizeof(type), __VA_ARGS__})
 #define PushArray(arena, count, type, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = (arena), .RequestSize = (count)*sizeof(type), __VA_ARGS__})
 #define ArenaClear(arena, ZeroMem) if(ZeroMem) {mem_zero((arena)->Base, (arena)->Size);} (arena)->Used = 0
-ARENAPROC char *Arena_strndup(memory_arena *Arena, char *s, size_t n);
+ARENAPROC char *Arena_strndup(memory_arena *Arena, const char *s, size_t n);
 
 /*  Split arenas work like a stack, you must rejoin them as first in last out.
     When you call ArenaSplit, it will remove the size requested from the original at (Base + Size - SplitSize)
@@ -935,7 +935,7 @@ memory_arena ArenaTemp = {
 };
 #endif // !defined(VICLIB_NO_TEMP_ARENA)
 
-ARENAPROC char *Arena_strndup(memory_arena *Arena, char *s, size_t n)
+ARENAPROC char *Arena_strndup(memory_arena *Arena, const char *s, size_t n)
 {
     char *Result = ArenaPushSize(Arena, n);
     mem_copy_non_overlapping(Result, s, n);
