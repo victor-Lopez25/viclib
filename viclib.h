@@ -991,7 +991,7 @@ ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt)
     opt.Arena->Size = opt.Arena->Size - opt.SplitSize;
 
     opt.SplitArena->Size = opt.SplitSize;
-    opt.SplitArena->Base = opt.Arena->Base + opt.SplitSize;
+    opt.SplitArena->Base = opt.Arena->Base + opt.Arena->Size;
     opt.SplitArena->Used = 0;
     opt.SplitArena->ScratchCount = 0;
     opt.SplitArena->SplitCount = 0;
