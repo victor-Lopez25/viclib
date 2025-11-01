@@ -990,8 +990,11 @@ ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt)
     opt.Arena->SplitCount++;
     opt.Arena->Size = opt.Arena->Size - opt.SplitSize;
 
-    opt.SplitArena->Base = opt.Arena->Base + opt.SplitSize;
     opt.SplitArena->Size = opt.SplitSize;
+    opt.SplitArena->Base = opt.Arena->Base + opt.SplitSize;
+    opt.SplitArena->Used = 0;
+    opt.SplitArena->ScratchCount = 0;
+    opt.SplitArena->SplitCount = 0;
     ArenaPushSize(opt.SplitArena, 0, .Alignment = 4); // 'leak' up to 4 bytes here to keep the memory aligned
 }
 
