@@ -270,6 +270,10 @@ typedef struct {
 # define VIEWPROC VLIBPROC
 #endif
 
+#ifndef strlen
+size_t strlen(const char *s);
+#endif // strlen
+
 int is_space(int _c); // only checks ascii space characters
 VIEWPROC view view_FromParts(const char *Data, size_t Count);
 VIEWPROC view view_FromCstr(const char *Cstr);
@@ -353,6 +357,8 @@ struct ArenaSplit_opts {
 #define PushArray(arena, count, type, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = (arena), .RequestSize = (count)*sizeof(type), __VA_ARGS__})
 #define ArenaClear(arena, ZeroMem) if(ZeroMem) {mem_zero((arena)->Base, (arena)->Size);} (arena)->Used = 0
 ARENAPROC char *Arena_strndup(memory_arena *Arena, const char *s, size_t n);
+// s MUST be null terminated
+ARENAPROC char *Arena_strdup(memory_arena *Arena, const char *s);
 
 /*  Split arenas work like a stack, you must rejoin them as first in last out.
     When you call ArenaSplit, it will remove the size requested from the original at (Base + Size - SplitSize)
@@ -367,6 +373,16 @@ ARENAPROC size_t ArenaGetRemaining_Opt(struct ArenaGetRemaining_opts opt);
 ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt);
 ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt);
 ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena);
+
+#ifndef VICLIB_NO_TEMP_ARENA
+# define temp_reset() ArenaClear(&ArenaTemp, true)
+// will align to 4 bytes
+# define temp_alloc(size) ArenaPushSize(&ArenaTemp, size)
+# define temp_strdup(s) Arena_strdup(&ArenaTemp, s)
+# define temp_strndup(s, n) Arena_strndup(&ArenaTemp, s, n)
+# define temp_save() ArenaTemp.Used
+# define temp_rewind(checkpoint) ArenaTemp.Used = checkpoint;
+#endif
 
 ////////////////////////////////
 
@@ -454,6 +470,15 @@ int is_space(int _c)
            c == '\v' || c == '\f' || c == '\r');
 }
 
+#ifndef strlen
+size_t strlen(const char *s)
+{
+    size_t n = 0;
+    for(; *s != 0; s++) n++;
+    return n;
+}
+#endif // strlen
+
 VIEWPROC view view_FromParts(const char *Data, size_t Count)
 {
     view v;
@@ -466,8 +491,7 @@ VIEWPROC view view_FromCstr(const char *Cstr)
 {
     view v;
     v.Data = Cstr;
-    v.Len = 0;
-    for(; *Cstr != 0; Cstr++) v.Len++;
+    v.Len = strlen(Cstr);
     return v;
 }
 
@@ -940,6 +964,12 @@ ARENAPROC char *Arena_strndup(memory_arena *Arena, const char *s, size_t n)
     char *Result = ArenaPushSize(Arena, n);
     mem_copy_non_overlapping(Result, s, n);
     return Result;
+}
+
+ARENAPROC char *Arena_strdup(memory_arena *Arena, const char *s)
+{
+    size_t n = strlen(s);
+    return Arena_strndup(Arena, s, n);
 }
 
 ARENAPROC void ArenaInit(memory_arena *Arena, size_t Size, void *Base)
