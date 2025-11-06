@@ -963,14 +963,14 @@ ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment)
 
 ARENAPROC size_t ArenaGetRemaining_Opt(struct ArenaGetRemaining_opts opt)
 {
-    if(opt.Alignment < 1) opt.Alignment = 1;
+    if(opt.Alignment < 1) opt.Alignment = 4;
     size_t Result = opt.Arena->Size - (opt.Arena->Used + ArenaGetAlignmentOffset(opt.Arena, opt.Alignment));
     return Result;
 }
 
 ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt)
 {
-    if(opt.Alignment < 1) opt.Alignment = 1;
+    if(opt.Alignment < 1) opt.Alignment = 4;
     size_t Size = opt.RequestSize;
     size_t AlignOffset = ArenaGetAlignmentOffset(opt.Arena, opt.Alignment);
     Size += AlignOffset;
@@ -985,7 +985,7 @@ ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt)
 ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt)
 {
     AssertMsg(opt.Arena->Size > opt.SplitSize, "Need more memory in arena to split to requested size");
-    if(opt.SplitSize == 0) opt.SplitSize = ArenaGetRemaining(opt.Arena) / 2;
+    if(opt.SplitSize == 0) opt.SplitSize = ArenaGetRemaining(opt.Arena, .Alignment = 1) / 2;
 
     opt.Arena->SplitCount++;
     opt.Arena->Size = opt.Arena->Size - opt.SplitSize;
