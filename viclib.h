@@ -1061,7 +1061,7 @@ ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena)
 
 ARENAPROC void ArenaSplitMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount)
 {
-    size_t SplitSize = ArenaGetRemaining(Arena, .Alignment = 1) / SplitArenaCount;
+    size_t SplitSize = ArenaGetRemaining(Arena, .Alignment = 1) / (SplitArenaCount + 1);
     for(size_t SplitIdx = 0; SplitIdx < SplitArenaCount; SplitIdx++) ArenaSplit(Arena, SplitArenas[SplitIdx], SplitSize);
 }
 
