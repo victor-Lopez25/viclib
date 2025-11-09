@@ -16,18 +16,22 @@ void TestViewStrs()
     printf("Chop \""VIEW_FMT"\" by delim '0': ", VIEW_ARG(T1));
     view T4 = view_ChopByDelim(&T1, '0');
     printf("Chopped: \""VIEW_FMT"\"\tRemaining: \""VIEW_FMT"\"\n", VIEW_ARG(T4), VIEW_ARG(T1));
+    Assert(view_Eq(T4, VIEW("1")) && view_Eq(T1, VIEW("20")));
 
     printf("Chop \""VIEW_FMT"\" by view \"02\": ", VIEW_ARG(T2));
     view T5 = view_ChopByView(&T2, VIEW("02"));
     printf("Chopped: \""VIEW_FMT"\"\tRemaining: \""VIEW_FMT"\"\n", VIEW_ARG(T5), VIEW_ARG(T2));
+    Assert(view_Eq(T5, VIEW("1")) && view_Eq(T2, VIEW("0")));
 
     printf("Chop \""VIEW_FMT"\" left by 1:\t", VIEW_ARG(T3));
     view T6 = view_ChopLeft(&T3, 1);
     printf("Chopped: \""VIEW_FMT"\"\tRemaining: \""VIEW_FMT"\"\n", VIEW_ARG(T6), VIEW_ARG(T3));
+    Assert(view_Eq(T6, VIEW("1")) && view_Eq(T3, VIEW("020")));
 
     printf("Chop \""VIEW_FMT"\" right by 1:\t", VIEW_ARG(T3));
     T6 = view_ChopRight(&T3, 1);
     printf("Chopped: \""VIEW_FMT"\"\tRemaining: \""VIEW_FMT"\"\n", VIEW_ARG(T6), VIEW_ARG(T3));
+    Assert(view_Eq(T6, VIEW("0")) && view_Eq(T3, VIEW("02")));
 
     view T7 = VIEW_STATIC("\t \nHello\v\f\r");
     T6 = view_Trim(T7);
@@ -48,10 +52,22 @@ void TestViewStrs()
              "#define VIEW_STATIC(cstr_lit) {(const char*)(cstr_lit), sizeof(cstr_lit) - 1}\n"
              "#define VIEW_FMT \"%.*s\"\n"
              "#define VIEW_ARG(v) (int)(v).Len, (v).Data\n");
+    view T10 = T9;
     printf("Splitting lines:\n"
            "source string: \""VIEW_FMT"\"\n", VIEW_ARG(T9));
 
     view_IterateLines(T9, lineIdx, line) printf("line %d: "VIEW_FMT"\n", (int)lineIdx, VIEW_ARG(line));
+
+    view T11 = T10;
+    printf("Splitting spaces:\n");
+    view_IterateSpaces(T10, wordIdx, word)
+        printf("word %d: \""VIEW_FMT"\"\t", (int)wordIdx, VIEW_ARG(word));
+
+    printf("Splitting by separators:\n");
+    view delims = VIEW_STATIC(" {}*;#().,");
+    view_IterateDelimiters(T11, delims, tokIdx, token, delim)
+        if((token.Len > 0 && !(token.Len == 1 && token.Data[0] == '\n')) || delim != ' ')
+            printf("token %d: \""VIEW_FMT"\"\tdelim found: '%c'\n", (int)tokIdx, VIEW_ARG(token), delim);
 }
 
 void TestParsing()

@@ -285,6 +285,7 @@ VIEWPROC const char *view_Contains(view Haystack, view Needle); // result = poin
 #define view_EndWith view_EndsWith /* in case of singular/plural annoyance */
 VIEWPROC bool view_EndsWith(view v, view End);
 VIEWPROC view view_ChopByDelim(view *v, char Delim);
+VIEWPROC view view_ChopByAnyDelim(view *v, view Delims, char *Delimiter); // checks for any character in Delims, stores found delimiter in Delimiter
 VIEWPROC view view_ChopByView(view *v, view Delim); // full view is the delim
 VIEWPROC view view_ChopLeft(view *v, size_t n);
 VIEWPROC view view_ChopRight(view *v, size_t n);
@@ -295,6 +296,16 @@ VIEWPROC view view_Trim(view v);
 #define view_IterateLines(src, idxName, lineName) \
     view lineName = view_ChopByDelim(&src, '\n'); \
     for(size_t idxName = 0; src.Len > 0; lineName = view_ChopByDelim(&src, '\n'), idxName++)
+
+#define view_IterateSpaces(src, idxName, wordName) \
+    view wordName = view_ChopByAnyDelim(&src, (view)VIEW_STATIC(" \n\t\v\f\r"), 0); \
+    for(size_t idxName = 0; src.Len > 0; wordName = view_ChopByAnyDelim(&src, (view)VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
+        if(word.Len > 0)
+
+#define view_IterateDelimiters(src, delims, idxName, tokName, delimName) \
+    char delimName; \
+    view tokName = view_ChopByAnyDelim(&src, delims, &delimName); \
+    for(size_t idxName = 0; src.Len > 0; tokName = view_ChopByAnyDelim(&src, delims, &delimName), idxName++)
 
 #define PARSE_FAIL 0
 #define PARSE_NO_DECIMALS 1 // for when you might want integer precision
@@ -595,6 +606,34 @@ VIEWPROC view view_ChopByDelim(view *v, char Delim)
     size_t i = 0;
     for(;i < v->Len && v->Data[i] != Delim;) i += 1;
 
+    view Result = view_FromParts((const char*)v->Data, i);
+
+    if(i < v->Len) {
+        v->Len -= i + 1;
+        v->Data += i + 1;
+    }
+    else {
+        v->Len -= i;
+        v->Data += i;
+    }
+
+    return Result;
+}
+
+VIEWPROC view view_ChopByAnyDelim(view *v, view Delims, char *Delimiter)
+{
+    if(Delimiter) *Delimiter = 0;
+
+    size_t i = 0;
+    for(; i < v->Len; i++) {
+        for(size_t j = 0; j < Delims.Len; j++)
+            if(Delims.Data[j] == v->Data[i]) {
+                if(Delimiter) *Delimiter = v->Data[i];
+                goto done;
+            }
+    }
+
+done:
     view Result = view_FromParts((const char*)v->Data, i);
 
     if(i < v->Len) {
