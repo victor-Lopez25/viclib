@@ -360,10 +360,16 @@ ARENAPROC char *Arena_strndup(memory_arena *Arena, const char *s, size_t n);
 // s MUST be null terminated
 ARENAPROC char *Arena_strdup(memory_arena *Arena, const char *s);
 
-/*  Split arenas work like a stack, you must rejoin them as first in last out.
-    When you call ArenaSplit, it will remove the size requested from the original at (Base + Size - SplitSize)
-    Calling ArenaSplit without SplitSize will split the arena into two equal parts (*they could be different sizes due to alignment) */
+/* Split arenas work like a stack, you must rejoin them as first in last out.
+ * When you call ArenaSplit, it will remove the size requested from the original at (Base + Size - SplitSize)
+ * Calling ArenaSplit without SplitSize will split the arena into two equal parts (*they could be different sizes due to alignment)
+**/
 #define ArenaSplit(arena, split, ...) ArenaSplit_Opt((struct ArenaSplit_opts){.Arena = (arena), .SplitArena = (split), __VA_ARGS__})
+// Split an arena into multiple equal parts
+#define ArenaSplitMultiple(arena, split, ...) ArenaSplitMultiple_Impl((arena), \
+    (memory_arena*[]){(split), __VA_ARGS__}, sizeof((memory_arena*[]){(split), __VA_ARGS__})/sizeof(memory_arena*))
+#define ArenaRejoinMultiple(arena, split, ...) ArenaRejoinMultiple_Impl((arena), \
+    (memory_arena*[]){(split), __VA_ARGS__}, sizeof((memory_arena*[]){(split), __VA_ARGS__})/sizeof(memory_arena*))
 ARENAPROC void ArenaInit(memory_arena *Arena, size_t Size, void *Base);
 ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena);
 ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem);
@@ -373,6 +379,8 @@ ARENAPROC size_t ArenaGetRemaining_Opt(struct ArenaGetRemaining_opts opt);
 ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt);
 ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt);
 ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena);
+ARENAPROC void ArenaSplitMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount);
+ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount);
 
 #ifndef VICLIB_NO_TEMP_ARENA
 # define temp_reset() ArenaClear(&ArenaTemp, true)
@@ -1049,6 +1057,17 @@ ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena)
     SplitArena->Used = 0;
     Arena->Size += SplitArena->Size;
     Arena->SplitCount--;
+}
+
+ARENAPROC void ArenaSplitMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount)
+{
+    size_t SplitSize = ArenaGetRemaining(Arena, .Alignment = 1) / SplitArenaCount;
+    for(size_t SplitIdx = 0; SplitIdx < SplitArenaCount; SplitIdx++) ArenaSplit(Arena, SplitArenas[SplitIdx], SplitSize);
+}
+
+ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount)
+{
+    for(size_t SplitIdx = SplitArenaCount - 1; SplitIdx >= 0; SplitIdx--) ArenaRejoin(Arena, SplitArenas[SplitIdx]);
 }
 
 ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena)
