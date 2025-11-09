@@ -29,6 +29,7 @@ To have any of these take effect, you must define them _before_ including this f
  - VICLIB_TEMP_SIZE: ArenaTemp size, default is 4\*1024\*1024 bytes
  - VICLIB_NO*: If you want to remove parts of the library:
    - VICLIB_NO_TEMP_ARENA: remove ArenaTemp
+   - VICLIB_NO_FILE_IO: remove any file IO functions. Useful for when you already have some other library that does file IO (for example SDL -> SDL_LoadFile)
    - VICLIB_NO_SORT: remove Sort and all functions used by it
 Check ErrorNumber when errors occur.
 

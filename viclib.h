@@ -396,11 +396,15 @@ raddbg_type_view(SDL_Surface, $.format == SDL_PixelFormat.SDL_PIXELFORMAT_RGBA32
 
 ////////////////////////////////
 
+#if !defined(VICLIB_NO_FILE_IO)
+
 #define ERROR_READ_UNKNOWN 1
 #define ERROR_READ_FILE_NOT_FOUND 2
 #define ERROR_READ_ACCESS_DENIED 3
 #define ERROR_READ_NO_MEM 4
 #define ERROR_READ_FILE_TOO_BIG 5 // READ_ENTIRE_FILE_MAX exceeded
+
+#define ERROR_WRITE_UNKNOWN 1
 
 #ifndef READ_ENTIRE_FILE_MAX
 #define READ_ENTIRE_FILE_MAX 0xFFFFFFFF
@@ -426,7 +430,8 @@ typedef struct {
     size_t RemainingFileSize;
 } file_chunk;
 
-bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
+VLIBPROC bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
+VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size);
 
 #if (defined(_APISETFILE_) && defined(_MEMORYAPI_H_)) || (defined(_INC_STDIO) && defined(malloc)) || (defined(VL_FILE_LINUX) && defined(mmap))
 char *ReadEntireFile(const char *File, size_t *Size);
@@ -441,11 +446,17 @@ AssertMsgAlways(false, "To use 'ReadEntireFile' you must\n:" \
 " - include both unistd.h, sys/stat.h and sys/mman.h (linux)")
 #define ReadFileChunk(Chunk, File, ChunkSize) /* (void)Chunk; */\
 AssertMsgAlways(false, "To use 'ReadFileChunk' you must\n:" \
-" - include and stdio.h (stdlib)\n" \
+" - include stdio.h (stdlib)\n" \
+" - either windows.h or fileapi.h (windows api)\n" \
+" - include unistd.h, sys/stat.h (linux)")
+#define WriteEntireFile(File, Data, Size) \
+AssertMsgAlways(false, "To use 'ReadFileChunk' you must\n:" \
+" - include stdio.h (stdlib)\n" \
 " - either windows.h or fileapi.h (windows api)\n" \
 " - include unistd.h, sys/stat.h (linux)")
 
 #endif
+#endif // !defined(VICLIB_NO_FILE_IO)
 
 #ifndef VICLIB_NO_SORT
 bool int_less_than(const void *A, const void *B);
@@ -1065,6 +1076,7 @@ ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem)
 
 ////////////////////////////////
 
+#if !defined(VICLIB_NO_FILE_IO)
 #if defined(_APISETFILE_) // windows fileapi.h included
 
 #if defined(_MEMORYAPI_H_)
@@ -1274,7 +1286,7 @@ PUSH_IGNORE_UNINITIALIZED
 char *ReadEntireFile(char *File, size_t *Size)
 {
     ErrorNumber = 0;
-    // ERROR_READ_UNKNOWN - fopen, fseek, ftell failed
+    // ERROR_READ_UNKNOWN - fseek, ftell failed
     // fopen could fail due to many things
     // TODO: Set ErrorNumber depending on them
     // ERROR_READ_NO_MEM - malloc failed
@@ -1383,7 +1395,39 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
     return true;
 }
 
+// TODO: WriteEntire file for windows & linux
+VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
+{
+    const char *buf = 0;
+    FILE *f = fopen(File, "wb");
+    if(f == 0) {
+        ErrorNumber = ERROR_WRITE_UNKNOWN; // TODO: Check errors to see cause
+        return false;
+    }
+
+    //           len
+    //           v
+    // aaaaaaaaaa
+    //     ^
+    //     data
+
+    buf = (const char*)Data;
+    while(Size > 0) {
+        size_t n = fwrite(buf, 1, Size, f);
+        if(ferror(f)) {
+            fclose(f);
+            ErrorNumber = ERROR_WRITE_UNKNOWN; // TODO: Check errors to see cause
+            return false;
+        }
+        Size -= n;
+        buf  += n;
+    }
+
+    return true;
+}
+
 #endif // stdio.h included
+#endif // !defined(VICLIB_NO_FILE_IO)
 
 #ifndef VICLIB_NO_SORT
 
