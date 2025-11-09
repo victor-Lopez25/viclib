@@ -1110,7 +1110,7 @@ ARENAPROC void ArenaSplitMultiple_Impl(memory_arena *Arena, memory_arena **Split
 
 ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount)
 {
-    for(size_t SplitIdx = SplitArenaCount - 1; SplitIdx >= 0; SplitIdx--) ArenaRejoin(Arena, SplitArenas[SplitIdx]);
+    for(int64_t SplitIdx = (int64_t)SplitArenaCount - 1; SplitIdx >= 0; SplitIdx--) ArenaRejoin(Arena, SplitArenas[SplitIdx]);
 }
 
 ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena)
