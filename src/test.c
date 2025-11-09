@@ -38,6 +38,20 @@ void TestViewStrs()
 
     view T8 = view_Slice(T6, 2, 4);
     printf("To slice: \""VIEW_FMT"\"\tSliced (2, 4): \""VIEW_FMT"\"\n", VIEW_ARG(T6), VIEW_ARG(T8));
+
+    view T9 = 
+        VIEW("typedef struct {\n"
+             "    const char *Data;\n"
+             "    size_t Len;\n"
+             "} view;\n"
+             "#define VIEW(cstr_lit) view_FromParts((cstr_lit), sizeof(cstr_lit) - 1)\n"
+             "#define VIEW_STATIC(cstr_lit) {(const char*)(cstr_lit), sizeof(cstr_lit) - 1}\n"
+             "#define VIEW_FMT \"%.*s\"\n"
+             "#define VIEW_ARG(v) (int)(v).Len, (v).Data\n");
+    printf("Splitting lines:\n"
+           "source string: \""VIEW_FMT"\"\n", VIEW_ARG(T9));
+
+    view_IterateLines(T9, lineIdx, line) printf("line %d: "VIEW_FMT"\n", (int)lineIdx, VIEW_ARG(line));
 }
 
 void TestParsing()

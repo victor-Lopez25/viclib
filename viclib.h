@@ -292,6 +292,10 @@ VIEWPROC view view_TrimLeft(view v);
 VIEWPROC view view_TrimRight(view v);
 VIEWPROC view view_Trim(view v);
 
+#define view_IterateLines(src, idxName, lineName) \
+    view lineName = view_ChopByDelim(&src, '\n'); \
+    for(size_t idxName = 0; src.Len > 0; lineName = view_ChopByDelim(&src, '\n'), idxName++)
+
 #define PARSE_FAIL 0
 #define PARSE_NO_DECIMALS 1 // for when you might want integer precision
 #define PARSE_OK 2
