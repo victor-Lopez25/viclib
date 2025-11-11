@@ -410,11 +410,20 @@ ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **Spli
 ////////////////////////////////
 
 #ifdef RADDBG_MARKUP_H
+#if COMPILER_GCC || COMPILER_CLANG
+// temporary solution
+PRAGMA(GCC diagnostic push)
+PRAGMA(GCC diagnostic ignored "-Wattributes")
+#endif
 raddbg_type_view(view, array($.Data, $.Len));
 #if defined(SDL_h_)
 raddbg_type_view(SDL_Surface, $.format == SDL_PixelFormat.SDL_PIXELFORMAT_RGBA32 ? 
     bitmap($.pixels, $.w, $.h, RGBA32) : $);
 #endif
+#if COMPILER_GCC || COMPILER_CLANG
+RESTORE_WARNINGS
+#endif
+
 #endif // RADDBG_MARKUP_H
 
 ////////////////////////////////
