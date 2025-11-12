@@ -10,9 +10,14 @@ Includes:
  - ReadEntireFile and ReadFileChunk when using stdlib or windows.h
  - Sort() which performs an introsort
 
-To download the header only:
+To download the header only libs:
 ```console
 wget -O viclib.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/viclib.h
+```
+vl_build.h depends on viclib.h
+```console
+wget -O viclib.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/viclib.h
+wget -O vl_build.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/vl_build.h
 ```
 
 ## WARNING: This library is unfinished, so don't expect great things
