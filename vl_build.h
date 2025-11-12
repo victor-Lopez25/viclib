@@ -21,14 +21,8 @@
 #  define _CRT_SECURE_NO_WARNINGS
 # endif
 # define WIN32_LEAN_AND_MEAN
-//# define _WINUSER_
-//# define _WINGDI_
-//# define _IMM_
-//# define _WINCON_
 #include <windows.h>
 #include <direct.h>
-//#include <shellapi.h>
-//#include <fileapi.h>
 typedef HANDLE VL_Proc;
 # define VL_INVALID_PROC INVALID_HANDLE_VALUE
 typedef HANDLE VL_Fd;
