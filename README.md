@@ -2,13 +2,24 @@
 
 Header-only library which does some basic stuff you might want in a lot of programs
 
-Includes:
+viclib.h includes:
  - String view implementation (view_* functions)
  - Assertions
  - Simple memory functions (mem_copy, mem_zero, mem_compare)
  - Arena implementation
  - ReadEntireFile and ReadFileChunk when using stdlib or windows.h
  - Sort() which performs an introsort
+
+vl_build.h includes:
+ - viclib.h since it depends on it
+ - string builder implementation (string_builder)
+ - list implementation (da_*)
+ - File operations (read, write, copy, delete, rename)
+ - Directory operations (get cwd, set cwd, pushd, popd, readdir, copy directory recursively)
+ - Processes, in async too (cmd*)
+ - Some filepath operations
+ - helpers to use any c compiler (VL_cc*)
+ - NOB_GO_REBUILD_URSELF technology (tm)
 
 To download the header only libs:
 ```console
@@ -42,5 +53,6 @@ Check ErrorNumber when errors occur.
  - Mr4th's 4ed_base_types.h - https://mr-4th.itch.io/4coder (find the file in 'custom' directory)
  - stb header-only libraries - https://github.com/nothings/stb
  - tsoding's string view implementation - https://github.com/tsoding/sv
+ - tsoding's nobuild - https://github.com/tsoding/nob.h
 
 You are free to change the name of the file if you modify it, just keep the license as "original viclib license by Victor Lopez:\n>mit license here<".
