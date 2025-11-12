@@ -213,12 +213,13 @@ typedef uint8_t  bool;
 #  define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
         printf(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
         fflush(stdout); DebugBreakpoint; } }while(0)
-#else
-# if !defined(QUIET_ASSERT)
-#  define QUIET_ASSERT
-#  pragma message("Warning: Using quiet assert since stdio.h is not included")
-#  define AssertAlways(e) do{ if(!(e)) { DebugBreakpoint; } }while(0)
-#  define AssertMsgAlways(e, msg) AssertAlways(e)
+# else
+#  if !defined(QUIET_ASSERT)
+#   define QUIET_ASSERT
+#   pragma message("Warning: Using quiet assert since stdio.h is not included")
+#   define AssertAlways(e) do{ if(!(e)) { DebugBreakpoint; } }while(0)
+#   define AssertMsgAlways(e, msg) AssertAlways(e)
+#  endif
 # endif
 #endif // !defined(AssertAlways) || !defined(AssertMsgAlways)
 
