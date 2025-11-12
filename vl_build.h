@@ -1,3 +1,4 @@
+// [vl_build.h](https://github.com/victor-Lopez25/viclib) © 2024 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 #ifndef VL_BUILD_H
 #define VL_BUILD_H
 

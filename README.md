@@ -55,4 +55,7 @@ Check ErrorNumber when errors occur.
  - tsoding's string view implementation - https://github.com/tsoding/sv
  - tsoding's nobuild - https://github.com/tsoding/nob.h
 
-You are free to change the name of the file if you modify it, just keep the license as "original viclib license by Victor Lopez:\n>mit license here<".
+### Licences
+viclib.h is licenced under MIT, as shown in the file itself. You are free to change the name of the file if you modify it, just keep the license as "original viclib license by Victor Lopez:\n>mit license here<".
+
+[vl_build.h]() © 2024 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
