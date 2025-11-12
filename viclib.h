@@ -266,7 +266,11 @@ typedef struct {
     size_t Len;
 } view;
 #define VIEW(cstr_lit) view_FromParts((cstr_lit), sizeof(cstr_lit) - 1)
+#if defined(__cplusplus)
 #define VIEW_STATIC(cstr_lit) {(const char*)(cstr_lit), sizeof(cstr_lit) - 1}
+#else
+#define VIEW_STATIC(cstr_lit) (view){(const char*)(cstr_lit), sizeof(cstr_lit) - 1}
+#endif
 #define VIEW_FMT "%.*s"
 #define VIEW_ARG(v) (int)(v).Len, (v).Data
 
@@ -302,8 +306,8 @@ VIEWPROC view view_Trim(view v);
     for(size_t idxName = 0; src.Len > 0; lineName = view_ChopByDelim(&src, '\n'), idxName++)
 
 #define view_IterateSpaces(src, idxName, wordName) \
-    view wordName = view_ChopByAnyDelim(&src, (view)VIEW_STATIC(" \n\t\v\f\r"), 0); \
-    for(size_t idxName = 0; src.Len > 0; wordName = view_ChopByAnyDelim(&src, (view)VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
+    view wordName = view_ChopByAnyDelim(&src, VIEW_STATIC(" \n\t\v\f\r"), 0); \
+    for(size_t idxName = 0; src.Len > 0; wordName = view_ChopByAnyDelim(&src, VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
         if(word.Len > 0)
 
 #define view_IterateDelimiters(src, delims, idxName, tokName, delimName) \
@@ -404,7 +408,7 @@ ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **Spli
 #ifndef VICLIB_NO_TEMP_ARENA
 # define temp_reset() ArenaClear(&ArenaTemp, true)
 // will align to 4 bytes
-# define temp_alloc(size) ArenaPushSize(&ArenaTemp, size)
+# define temp_alloc(size, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = &ArenaTemp, .RequestSize = (size), __VA_ARGS__})
 # define temp_strdup(s) Arena_strdup(&ArenaTemp, s)
 # define temp_strndup(s, n) Arena_strndup(&ArenaTemp, s, n)
 # define temp_save() ArenaTemp.Used
@@ -448,6 +452,15 @@ RESTORE_WARNINGS
 
 #if defined(_UNISTD_H_) && defined(_SYS_STAT_H_)
 # define VL_FILE_LINUX
+#endif
+
+#if defined(_APISETFILE_) || defined(VL_FILE_LINUX)
+bool GetLastWriteTime(const char *file, u64 *WriteTime);
+#else
+#define GetLastWriteTime(file, writeTime) \
+AssertMsgAlways(false, "To use GetLastWriteTime you must:\n" \
+    " - include windows.h or fileapi.h (windows api)\n" \
+    " - inlcude sys/stat.h (linux)")
 #endif
 
 #if defined(_APISETFILE_) || defined(_INC_STDIO) || defined(VL_FILE_LINUX)
@@ -1150,6 +1163,32 @@ ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem)
 }
 
 ////////////////////////////////
+
+#if defined(_APISETFILE_) // windows fileapi.h included
+bool GetLastWriteTime(const char *file, u64 *WriteTime)
+{
+    bool ok = false;
+    WIN32_FILE_ATTRIBUTE_DATA data;
+    if(GetFileAttributesEx(file, GetFileExInfoStandard, &data) &&
+        (uint64_t)data.nFileSizeHigh + (uint64_t)data.nFileSizeLow > 0)
+    {
+        *WriteTime = *(uint64_t*)&data.ftLastWriteTime;
+        ok = true;
+    }
+    return ok;
+}
+#elif defined(_SYS_STAT_H_)
+bool GetLastWriteTime(const char *file, uint64_t *WriteTime)
+{
+    struct stat attr;
+    bool ok = false;
+    if(!stat(file, &attr) && attr.st_size > 0) {
+        ok = true;
+        *WriteTime = *(uint64_t*)&attr.st_mtim;
+    }
+    return ok;
+}
+#endif
 
 #if !defined(VICLIB_NO_FILE_IO)
 #if defined(_APISETFILE_) // windows fileapi.h included
