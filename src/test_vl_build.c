@@ -33,6 +33,7 @@ int main(int argc, char **argv)
 {
     VL_GO_REBUILD_URSELF(argc, argv, "vl_build.h");
 
+    MkdirIfNotExist("bin");
     VL_Pushd("bin");
     CompileStuff();
     VL_Popd();
