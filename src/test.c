@@ -63,7 +63,7 @@ void TestViewStrs()
     view_IterateSpaces(T10, wordIdx, word)
         printf("word %d: \""VIEW_FMT"\"\t", (int)wordIdx, VIEW_ARG(word));
 
-    printf("Splitting by separators:\n");
+    printf("\nSplitting by separators:\n");
     view delims = VIEW_STATIC(" {}*;#().,");
     view_IterateDelimiters(T11, delims, tokIdx, token, delim)
         if((token.Len > 0 && !(token.Len == 1 && token.Data[0] == '\n')) || delim != ' ')
