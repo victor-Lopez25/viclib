@@ -1049,8 +1049,9 @@ memory_arena ArenaTemp = {
 
 ARENAPROC char *Arena_strndup(memory_arena *Arena, const char *s, size_t n)
 {
-    char *Result = ArenaPushSize(Arena, n);
+    char *Result = ArenaPushSize(Arena, n + 1);
     mem_copy_non_overlapping(Result, s, n);
+    Result[n] = '\0';
     return Result;
 }
 
