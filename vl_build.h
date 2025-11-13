@@ -1222,16 +1222,17 @@ VLIBPROC bool VL_SetCurrentDir(const char *path)
 #endif // _WIN32
 }
 
-struct VL__pushd_buf_type VL__pushDirectoryBuffer = {
-    .Items[0] = ".",
-    .Count = 1,
-};
+struct VL__pushd_buf_type VL__pushDirectoryBuffer = {0};
 
 VLIBPROC bool VL_Pushd(const char *path)
 {
     AssertMsgAlways((VL__pushDirectoryBuffer.Count+1) < VL_PUSHD_BUF_MAX, "Increase the size of the pushd buffer (VL_PUSHD_BUF_MAX)");
     bool ok = VL_SetCurrentDir(path);
     if(ok) {
+        if(VL__pushDirectoryBuffer.Count == 0) {
+            VL__pushDirectoryBuffer.Items[VL__pushDirectoryBuffer.Count++] = 
+                temp_strdup(VL_temp_GetCurrentDir());
+        }
         VL__pushDirectoryBuffer.Items[VL__pushDirectoryBuffer.Count++] = path;
     }
     return ok;
