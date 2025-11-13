@@ -62,9 +62,9 @@ VLIBPROC void VL_fd_Close(VL_Fd fd);
 #endif
 
 #if COMPILER_CL
-#define VL_TODO(msg) PRAGMA(message(LOC_MSVC_STR ": " msg))
+#define VL_TODO(msg) PRAGMA(message(LOC_MSVC_STR ": TODO: " msg))
 #else
-#define VL_TODO(msg) PRAGMA(message(msg))
+#define VL_TODO(msg) PRAGMA(message("TODO: " msg))
 #endif
 
 typedef enum {
