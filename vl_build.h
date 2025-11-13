@@ -1222,7 +1222,9 @@ VLIBPROC bool VL_SetCurrentDir(const char *path)
 #endif // _WIN32
 }
 
-struct VL__pushd_buf_type VL__pushDirectoryBuffer = {0};
+struct VL__pushd_buf_type VL__pushDirectoryBuffer = {
+    .Count = 0,
+};
 
 VLIBPROC bool VL_Pushd(const char *path)
 {
