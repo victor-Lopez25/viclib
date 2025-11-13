@@ -162,8 +162,14 @@ extern void __cdecl __debugbreak(void);
 // only works with static arrays!
 #define ArrayLen(arr) sizeof(arr)/sizeof(arr[0])
 
-#define stringify_(a) #a
-#define stringify(a) stringify_(a)
+#if !defined(stringify)
+# define stringify_(a) #a
+# define stringify(a) stringify_(a)
+#endif
+#if !defined(glue)
+# define glue_(a,b) a##b
+# define glue(a,b) glue_(a,b)
+#endif
 
 #ifndef min
 # define min(A, B) ((A) < (B) ? (A) : (B))
