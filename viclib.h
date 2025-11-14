@@ -664,6 +664,7 @@ VIEWPROC view view_ChopByDelim(view *v, char Delim)
 
 VIEWPROC view view_ChopByAnyDelim(view *v, view Delims, char *Delimiter)
 {
+    view Result;
     if(Delimiter) *Delimiter = 0;
 
     size_t i = 0;
@@ -676,7 +677,7 @@ VIEWPROC view view_ChopByAnyDelim(view *v, view Delims, char *Delimiter)
     }
 
 done:
-    view Result = view_FromParts((const char*)v->Data, i);
+    Result = view_FromParts((const char*)v->Data, i);
 
     if(i < v->Len) {
         v->Len -= i + 1;
