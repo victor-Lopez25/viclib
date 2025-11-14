@@ -296,6 +296,7 @@ VIEWPROC int  view_Compare(view A, view B); // result = A - B
 VIEWPROC bool view_Eq(view A, view B);
 VIEWPROC bool view_StartsWith(view v, view Start);
 VIEWPROC const char *view_Contains(view Haystack, view Needle); // result = pointer to where the needle is in haystack or null
+VIEWPROC bool view_ContainsCharacter(view v, char c);
 #define view_EndWith view_EndsWith /* in case of singular/plural annoyance */
 VIEWPROC bool view_EndsWith(view v, view End);
 VIEWPROC view view_ChopByDelim(view *v, char Delim);
@@ -309,17 +310,18 @@ VIEWPROC view view_Trim(view v);
 
 #define view_IterateLines(src, idxName, lineName) \
     view lineName = view_ChopByDelim(&src, '\n'); \
-    for(size_t idxName = 0; src.Len > 0; lineName = view_ChopByDelim(&src, '\n'), idxName++)
+    for(size_t idxName = 0; src.Len > 0 || lineName.Len > 0; lineName = view_ChopByDelim(&src, '\n'), idxName++)
 
 #define view_IterateSpaces(src, idxName, wordName) \
     view wordName = view_ChopByAnyDelim(&src, VIEW_STATIC(" \n\t\v\f\r"), 0); \
-    for(size_t idxName = 0; src.Len > 0; wordName = view_ChopByAnyDelim(&src, VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
+    for(size_t idxName = 0; src.Len > 0 || wordName.Len > 0; wordName = view_ChopByAnyDelim(&src, VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
         if(word.Len > 0)
 
 #define view_IterateDelimiters(src, delims, idxName, tokName, delimName) \
     char delimName; \
     view tokName = view_ChopByAnyDelim(&src, delims, &delimName); \
-    for(size_t idxName = 0; src.Len > 0; tokName = view_ChopByAnyDelim(&src, delims, &delimName), idxName++)
+    for(size_t idxName = 0; src.Len > 0 || tokName.Len > 0 || delimName != '\0'; \
+        tokName = view_ChopByAnyDelim(&src, delims, &delimName), idxName++)
 
 #define PARSE_FAIL 0
 #define PARSE_NO_DECIMALS 1 // for when you might want integer precision
@@ -625,6 +627,14 @@ VIEWPROC const char *view_Contains(view Haystack, view Needle)
         if(mem_compare(Haystack.Data + i, Needle.Data, Needle.Len) == 0) return Haystack.Data + i;
     }
     return 0;
+}
+
+VIEWPROC bool view_ContainsCharacter(view v, char c)
+{
+    for(size_t i = 0; i < v.Len; i++) {
+        if(v.Data[i] == c) return true;
+    }
+    return false;
 }
 
 VIEWPROC bool view_EndsWith(view v, view End)
