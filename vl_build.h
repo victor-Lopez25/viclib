@@ -1576,8 +1576,9 @@ static VL_Proc VL__CmdStartProcess(VL_cmd cmd, VL_Fd *fdin, VL_Fd *fdout, VL_Fd 
 VLIBPROC void VL__GoRebuildUrself(int argc, char **argv, const char **src_paths, size_t path_count)
 {
     Assert(argc > 0);
-    argc--;
     const char *bin_path = *argv;
+    argc--;
+    argv++;
 #ifdef _WIN32
     // On Windows executables almost always invoked without extension, so
     // it's ./nob, not ./nob.exe. For renaming the extension is a must.
