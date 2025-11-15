@@ -178,6 +178,8 @@ extern void __cdecl __debugbreak(void);
 # define max(A, B) ((A) > (B) ? (A) : (B))
 #endif
 
+#define VL_ReturnDefer(value) do { result = (value); goto defer; } while(0)
+
 #define fallthrough
 
 #include <stdint.h>
@@ -448,9 +450,10 @@ RESTORE_WARNINGS
 
 #define ERROR_READ_UNKNOWN 1
 #define ERROR_READ_FILE_NOT_FOUND 2
-#define ERROR_READ_ACCESS_DENIED 3
-#define ERROR_READ_NO_MEM 4
-#define ERROR_READ_FILE_TOO_BIG 5 // READ_ENTIRE_FILE_MAX exceeded
+#define ERROR_WRITE_PATH_NOT_FOUND 3
+#define ERROR_FILE_ACCESS_DENIED 4
+#define ERROR_READ_NO_MEM 5
+#define ERROR_READ_FILE_TOO_BIG 6 // READ_ENTIRE_FILE_MAX exceeded
 
 #define ERROR_WRITE_UNKNOWN 1
 
@@ -1226,7 +1229,7 @@ char *ReadEntireFile(const char *File, size_t *Size)
             case ERROR_INVALID_DRIVE: fallthrough;
             case ERROR_PATH_NOT_FOUND: fallthrough;
             case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
-            case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_READ_ACCESS_DENIED; break;
+            case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
 
             default: ErrorNumber = ERROR_READ_UNKNOWN; break;
         }
@@ -1285,7 +1288,7 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
                 case ERROR_INVALID_DRIVE: fallthrough;
                 case ERROR_PATH_NOT_FOUND: fallthrough;
                 case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
-                case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_READ_ACCESS_DENIED; break;
+                case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
 
                 default: ErrorNumber = ERROR_READ_UNKNOWN; break;
             }
@@ -1319,6 +1322,44 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
     return true;
 }
 
+VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
+{
+    bool result = true;
+    HANDLE fhandle = INVALID_HANDLE_VALUE;
+
+    fhandle = CreateFileA(File, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if(fhandle == INVALID_HANDLE_VALUE) {
+        DWORD Error = GetLastError();
+        switch(Error) {
+            case ERROR_INVALID_DRIVE: fallthrough;
+            case ERROR_PATH_NOT_FOUND: fallthrough;
+            case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_WRITE_PATH_NOT_FOUND;
+            case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_FILE_ACCESS_DENIED;
+
+            default: ErrorNumber = ERROR_WRITE_UNKNOWN;
+        }
+        VL_ReturnDefer(false);
+    }
+
+    Assert(Size < 0xFFFFFFFFULL);
+    u8 *fData = (u8*)Data;
+    DWORD bytesToWriteTotal = (DWORD)Size;
+    DWORD bytesWrittenTotal = 0;
+    DWORD bytesWritten = 0;
+    while(bytesToWriteTotal > bytesWrittenTotal) {
+        if(!WriteFile(fhandle, fData, bytesToWriteTotal - bytesWrittenTotal, &bytesWritten, 0)) {
+            ErrorNumber = ERROR_WRITE_UNKNOWN;
+            VL_ReturnDefer(false);
+        }
+        bytesWrittenTotal += bytesWritten;
+        fData += bytesWritten;
+    }
+
+defer:
+    if(fhandle != INVALID_HANDLE_VALUE) CloseHandle(fhandle);
+    return result;
+}
+
 #elif defined(VL_FILE_LINUX)
 
 #if defined(mmap)
@@ -1327,7 +1368,7 @@ char *ReadEntireFile(char *File, size_t *Size)
     ErrorNumber = 0;
     int fd = open(File, O_RDONLY);
     if(fd == -1) {
-        if(errno == EACCES || errno == EPERM) ErrorNumber = ERROR_READ_ACCESS_DENIED;
+        if(errno == EACCES || errno == EPERM) ErrorNumber = ERROR_FILE_ACCESS_DENIED;
         else if(errno == ENOMEM) ErrorNumber = ERROR_READ_NO_MEM;
         else if(errno == EOVERFLOW) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
         else if(errno == EBADF || errno == ENOENT)
@@ -1374,7 +1415,7 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
         Chunk->didFirstIteration = true;
         Chunk->fd = open(File, O_RDONLY);
         if(Chunk->fd == -1) {
-            if(errno == EACCES || errno == EPERM) ErrorNumber = ERROR_READ_ACCESS_DENIED;
+            if(errno == EACCES || errno == EPERM) ErrorNumber = ERROR_FILE_ACCESS_DENIED;
             else if(errno == ENOMEM) ErrorNumber = ERROR_READ_NO_MEM;
             else if(errno == EOVERFLOW) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
             else if(errno == EBADF || errno == ENOENT)
@@ -1410,6 +1451,8 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
     Chunk->RemainingFileSize -= (u32)OutSize;
     return true;
 }
+
+// TODO: WriteEntire file for linux
 
 #elif defined(_INC_STDIO)
 
@@ -1527,7 +1570,6 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
     return true;
 }
 
-// TODO: WriteEntire file for windows & linux
 VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
 {
     const char *buf = 0;

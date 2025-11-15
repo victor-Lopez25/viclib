@@ -108,8 +108,6 @@ VLIBPROC bool VL_WriteEntireFile(const char *path, const void *data, size_t size
 VLIBPROC VL_file_type VL_GetFileType(const char *path);
 VLIBPROC bool VL_DeleteFile(const char *path);
 
-#define VL_ReturnDefer(value) do { result = (value); goto defer; } while(0)
-
 // Initial capacity of a dynamic array
 #ifndef VL_DA_INIT_CAP
 # define VL_DA_INIT_CAP 256
@@ -1236,7 +1234,9 @@ VLIBPROC bool VL_Pushd(const char *path)
     AssertMsgAlways((VL__pushDirectoryBuffer.Count+1) < VL_PUSHD_BUF_MAX, "Increase the size of the pushd buffer (VL_PUSHD_BUF_MAX)");
     bool ok = VL_SetCurrentDir(path);
     if(ok) {
-        VL__pushDirectoryBuffer.Items[VL__pushDirectoryBuffer.Count++] = path;
+        VL__pushDirectoryBuffer.Items[VL__pushDirectoryBuffer.Count] = 
+            temp_sprintf("%s/%s", VL__pushDirectoryBuffer.Items[VL__pushDirectoryBuffer.Count - 1], path);
+        VL__pushDirectoryBuffer.Count++;
     }
     return ok;
 }
