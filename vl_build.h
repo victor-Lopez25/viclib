@@ -1217,15 +1217,15 @@ VLIBPROC bool VL_GetLastWriteTime(const char *file, u64 *writeTime)
 VLIBPROC int VL_NeedsRebuild_Impl(const char *output_path, const char **input_paths, size_t input_paths_count)
 {
     u64 outputFileTime;
-    if(!GetLastWriteTime(output_path, &outputFileTime)) return -1;
+    if(!GetLastWriteTime(output_path, &outputFileTime)) return 1;
 
     for(size_t i = 0; i < input_paths_count; ++i) {
         const char *input_path = input_paths[i];
         u64 inputFileTime;
+        if(!VL_GetLastWriteTime(input_path, &inputFileTime)) return -1;
 
         // NOTE: if even a single input_path is fresher than output_path that's 100% rebuild
-        if(!VL_GetLastWriteTime(input_path, &inputFileTime) ||
-           (inputFileTime > outputFileTime)) return 1;
+        if(inputFileTime > outputFileTime) return 1;
     }
 
     return 0;
