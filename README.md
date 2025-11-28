@@ -7,7 +7,7 @@ viclib.h includes:
  - Assertions
  - Simple memory functions (mem_copy, mem_zero, mem_compare)
  - Arena implementation
- - ReadEntireFile and ReadFileChunk when using stdlib or windows.h
+ - Some file operations (filetime, read/write entirefile, getfiletype)
  - Sort() which performs an introsort
 
 vl_build.h includes:
@@ -18,7 +18,7 @@ vl_build.h includes:
  - Directory operations (get cwd, set cwd, pushd, popd, readdir, copy directory recursively)
  - Processes, in async too (cmd*)
  - Some filepath operations
- - helpers to use any c compiler (VL_cc*)
+ - helpers to use any c compiler (VL_cc*) (gcc, clang, msvc are supported)
  - NOB_GO_REBUILD_URSELF technology (tm)
 
 To download the header only libs:
@@ -31,9 +31,59 @@ wget -O viclib.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/vi
 wget -O vl_build.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/vl_build.h
 ```
 
-## WARNING: This library is unfinished, so don't expect great things
+### WARNING: preferably use latest release and not a commit to main, since it could be broken
 
 ## Usage:
+### Quick start
+viclib.h:
+```c
+// include any stuff you might need for viclib before including viclib.h
+#include <stdio.h>
+#include <stdlib.h>
+
+#define VICLIB_IMPLEMENTATION
+#include "viclib.h"
+
+int main()
+{
+    char *file = "somefile.txt";
+    size_t filesize;
+    // since stdio.h and stdlib.h have been included before viclib.h, this will call the stdlib version of ReadEntireFile
+    char *data = ReadEntireFile(file, &filesize);
+    if(!data) {
+        fprintf(stderr, "Could not read file '%s': %d\n", file, ErrorNumber); // ErrorNumber is defined in viclib.h
+        return 1;
+    }
+    printf("%.*s\n", (int)filesize, data); // print the entire file
+    return 0;
+}
+```
+What if you didn't include `stdio.h` and `stdlib.h`? ReadEntireFile would become an assert(false) with a message saying you need to include some file api.
+
+vl_build.h:
+```c
+// vl_build.h includes viclib.h, define VICLIB_PATH if it's not "viclib.h"
+#define VL_BUILD_IMPLEMENTATION
+#include "vl_build.h"
+
+int main(int argc, char **argv)
+{
+    // rebuilds this file and rerruns it if needed, add extra files to the macro if you need to test if multiple files have been modified
+    VL_GO_REBUILD_URSELF(argc, argv);
+
+    VL_cmd cmd = {0};
+    VL_cc(&cmd); // chooses the compiler you used to compile this by default
+    VL_ccOutput(&cmd, "test" VL_EXE_EXTENSION);
+    cmd_Append(&cmd, "src/main.c");
+    VL_ccWarnings(&cmd);
+
+    // runs the command stored in cmd and resets cmd
+    if(!CmdRun(&cmd)) return 1;
+
+    return 0;
+}
+```
+
 ### Defines
 
 To have any of these take effect, you must define them _before_ including this file
