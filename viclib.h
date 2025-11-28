@@ -245,6 +245,17 @@ thread_local u32 ErrorNumber = 0;
 # define VLIBPROC
 #endif
 
+/* bool found = false; 
+ * LinearSearch(string_view_array, string_view, sv_Eq);
+ * if(found) {...}
+ * 
+ * string_view_array must have Count and Items attributes
+ */
+#define LinearSearch(arr, item, equal) \
+    for(size_t i = 0; i < (arr)->Count; i++) { \
+        if(equal((item), (arr)->Items[i])) { found = true; break; } \
+    }
+
 ////////////////////////////////
 // intrinsics
 ////////////////////////////////
@@ -466,9 +477,21 @@ RESTORE_WARNINGS
 #endif
 
 #if defined(_APISETFILE_) || defined(VL_FILE_LINUX)
+typedef enum {
+    VL_FILE_INVALID = -1,
+    VL_FILE_REGULAR = 0,
+    VL_FILE_DIRECTORY,
+    VL_FILE_SYMLINK,
+    VL_FILE_OTHER,
+} file_type;
 bool GetLastWriteTime(const char *file, u64 *WriteTime);
+VLIBPROC file_type GetFileType(const char *path);
 #else
 #define GetLastWriteTime(file, writeTime) \
+AssertMsgAlways(false, "To use GetLastWriteTime you must:\n" \
+    " - include windows.h or fileapi.h (windows api)\n" \
+    " - inlcude sys/stat.h (linux)")
+#define GetFileType(file) \
 AssertMsgAlways(false, "To use GetLastWriteTime you must:\n" \
     " - include windows.h or fileapi.h (windows api)\n" \
     " - inlcude sys/stat.h (linux)")
@@ -489,6 +512,7 @@ typedef struct {
     u8 *Buffer;
     size_t RemainingFileSize;
 } file_chunk;
+
 
 VLIBPROC bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
 VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size);
@@ -1333,8 +1357,8 @@ VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
         switch(Error) {
             case ERROR_INVALID_DRIVE: fallthrough;
             case ERROR_PATH_NOT_FOUND: fallthrough;
-            case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_WRITE_PATH_NOT_FOUND;
-            case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_FILE_ACCESS_DENIED;
+            case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_WRITE_PATH_NOT_FOUND; break;
+            case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
 
             default: ErrorNumber = ERROR_WRITE_UNKNOWN;
         }
@@ -1358,6 +1382,15 @@ VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
 defer:
     if(fhandle != INVALID_HANDLE_VALUE) CloseHandle(fhandle);
     return result;
+}
+
+VLIBPROC file_type VL_GetFileType(const char *path)
+{
+    DWORD attr = GetFileAttributesA(path);
+    if(attr == INVALID_FILE_ATTRIBUTES) return VL_FILE_INVALID;
+    if(attr & FILE_ATTRIBUTE_DIRECTORY) return VL_FILE_DIRECTORY;
+    // TODO: detect symlinks on Windows (whatever that means on Windows anyway)
+    return VL_FILE_REGULAR;
 }
 
 #elif defined(VL_FILE_LINUX)
@@ -1453,6 +1486,16 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
 }
 
 // TODO: WriteEntire file for linux
+
+VLIBPROC file_type GetFileType(const char *path)
+{
+    struct stat statbuf;
+    if(lstat(path, &statbuf) < 0) return VL_FILE_INVALID;
+    if(S_ISREG(statbuf.st_mode)) return VL_FILE_REGULAR;
+    if(S_ISDIR(statbuf.st_mode)) return VL_FILE_DIRECTORY;
+    if(S_ISLNK(statbuf.st_mode)) return VL_FILE_SYMLINK;
+    return VL_FILE_OTHER;
+}
 
 #elif defined(_INC_STDIO)
 
