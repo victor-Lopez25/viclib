@@ -71,7 +71,7 @@ int main(int argc, char **argv)
     // rebuilds this file and rerruns it if needed, add extra files to the macro if you need to test if multiple files have been modified
     VL_GO_REBUILD_URSELF(argc, argv);
 
-    VL_cmd cmd = {0};
+    vl_cmd cmd = {0};
     VL_cc(&cmd); // chooses the compiler you used to compile this by default
     VL_ccOutput(&cmd, "test" VL_EXE_EXTENSION);
     cmd_Append(&cmd, "src/main.c");
