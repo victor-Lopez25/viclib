@@ -335,19 +335,19 @@ VIEWPROC view view_TrimRight(view v);
 VIEWPROC view view_Trim(view v);
 
 #define view_IterateLines(src, idxName, lineName) \
-    view lineName = view_ChopByDelim(&src, '\n'); \
-    for(size_t idxName = 0; src.count > 0 || lineName.count > 0; lineName = view_ChopByDelim(&src, '\n'), idxName++)
+    view lineName = view_ChopByDelim((src), '\n'); \
+    for(size_t idxName = 0; (src)->count > 0 || lineName.count > 0; lineName = view_ChopByDelim((src), '\n'), idxName++)
 
 #define view_IterateSpaces(src, idxName, wordName) \
-    view wordName = view_ChopByAnyDelim(&src, VIEW_STATIC(" \n\t\v\f\r"), 0); \
-    for(size_t idxName = 0; src.count > 0 || wordName.count > 0; wordName = view_ChopByAnyDelim(&src, VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
+    view wordName = view_ChopByAnyDelim((src), VIEW_STATIC(" \n\t\v\f\r"), 0); \
+    for(size_t idxName = 0; (src)->count > 0 || wordName.count > 0; wordName = view_ChopByAnyDelim((src), VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
         if(word.count > 0)
 
 #define view_IterateDelimiters(src, delims, idxName, tokName, delimName) \
     char delimName; \
-    view tokName = view_ChopByAnyDelim(&src, delims, &delimName); \
-    for(size_t idxName = 0; src.count > 0 || tokName.count > 0 || delimName != '\0'; \
-        tokName = view_ChopByAnyDelim(&src, delims, &delimName), idxName++)
+    view tokName = view_ChopByAnyDelim((src), delims, &delimName); \
+    for(size_t idxName = 0; (src)->count > 0 || tokName.count > 0 || delimName != '\0'; \
+        tokName = view_ChopByAnyDelim((src), delims, &delimName), idxName++)
 
 #define PARSE_FAIL 0
 #define PARSE_NO_DECIMALS 1 // for when you might want integer precision

@@ -58,16 +58,16 @@ void TestViewStrs()
     printf("Splitting lines:\n"
            "source string: \""VIEW_FMT"\"\n", VIEW_ARG(T9));
 
-    view_IterateLines(T9, lineIdx, line) printf("line %d: "VIEW_FMT"\n", (int)lineIdx, VIEW_ARG(line));
+    view_IterateLines(&T9, lineIdx, line) printf("line %d: "VIEW_FMT"\n", (int)lineIdx, VIEW_ARG(line));
 
     view T11 = T10;
     printf("Splitting spaces:\n");
-    view_IterateSpaces(T10, wordIdx, word)
+    view_IterateSpaces(&T10, wordIdx, word)
         printf("word %d: \""VIEW_FMT"\"\t", (int)wordIdx, VIEW_ARG(word));
 
     printf("\nSplitting by separators:\n");
     view delims = VIEW_STATIC(" {}*;#().,");
-    view_IterateDelimiters(T11, delims, tokIdx, token, delim)
+    view_IterateDelimiters(&T11, delims, tokIdx, token, delim)
         if((token.count > 0 && !(token.count == 1 && token.items[0] == '\n')) || delim != ' ')
             printf("token %d: \""VIEW_FMT"\"\tdelim found: '%c'\n", (int)tokIdx, VIEW_ARG(token), delim);
 }
