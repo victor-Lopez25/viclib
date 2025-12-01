@@ -1,5 +1,5 @@
 // [vl_build.h](https://github.com/victor-Lopez25/viclib) © 2024 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-// version: 1.3.2
+// version: 1.3.3
 #ifndef VL_BUILD_H
 #define VL_BUILD_H
 
@@ -319,8 +319,8 @@ extern vl_needrebuild_context VL_needsRebuildContext;
 #define VL_BUILD_FILENAME_HASH(v, hash) do {\
     /* djb2 */ \
     hash = 5381; \
-    for(int i = 0; i < (int)v.count; i++) \
-        hash = ((hash << 5) + hash) + v.items[i]; /* hash * 33 + c */ \
+    for(int hashIdx = 0; hashIdx < (int)v.count; hashIdx++) \
+        hash = ((hash << 5) + hash) + v.items[hashIdx]; /* hash * 33 + c */ \
     } while(0)
 #endif // VL_BUILD_FILENAME_HASH
 
@@ -1164,6 +1164,7 @@ defer:
     if(optFdout) fd_Close(*optFdout);
     if(optFderr) fd_Close(*optFderr);
     opt.cmd->count = 0;
+    opt.cmd->msvc_linkflags = 0;
     return result;
 }
 
