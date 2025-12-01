@@ -1,5 +1,5 @@
 // [vl_build.h](https://github.com/victor-Lopez25/viclib) © 2024 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-// version: 1.3.1
+// version: 1.3.2
 #ifndef VL_BUILD_H
 #define VL_BUILD_H
 
@@ -371,8 +371,10 @@ VLIBPROC void VL_ccOutput_Opt(struct compiler_info_opts opt, const char *output)
 VLIBPROC void VL_ccDebug_Opt(struct compiler_info_opts opt);
 #define VL_ccDebug(Cmd, ...) VL_ccDebug_Opt((struct compiler_info_opts){.cmd = (Cmd), __VA_ARGS__})
 
-VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, char **libs, size_t libcount);
-#define VL_ccLibs(Cmd, l1, ...) VL_ccLibs_Opt((struct compiler_info_opts){.cmd = (Cmd), __VA_ARGS__}, \
+VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, size_t libcount);
+#define VL_ccLibs(Cmd, l1, ...) VL_ccLibs_Opt((struct compiler_info_opts){.cmd = (Cmd)}, \
+    ((const char*[]){l1, __VA_ARGS__}), sizeof((const char*[]){l1, __VA_ARGS__})/sizeof(const char*))
+#define VL_ccLibsC(Cmd, CC, l1, ...) VL_ccLibs_Opt((struct compiler_info_opts){.cmd = (Cmd), .cc = (CC)}, \
     ((const char*[]){l1, __VA_ARGS__}), sizeof((const char*[]){l1, __VA_ARGS__})/sizeof(const char*))
 
 VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpath);
@@ -681,7 +683,7 @@ VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src, const char *dst,
                 sb_AppendCstr(&srcSb, children.items[i]);
                 sb_AppendNull(&srcSb);
 
-                srcSb.count = 0;
+                dstSb.count = 0;
                 sb_AppendCstr(&dstSb, dst);
                 sb_AppendCstr(&dstSb, "/");
                 sb_AppendCstr(&dstSb, children.items[i]);
@@ -694,7 +696,7 @@ VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src, const char *dst,
         } break;
 
         case VL_FILE_REGULAR: {
-            if(view_EndsWith(VIEW(src), VIEW(ext)) && !VL_CopyFile(src, dst)) {
+            if(view_EndsWith(view_FromCstr(src), view_FromCstr(ext)) && !VL_CopyFile(src, dst)) {
                 VL_ReturnDefer(false);
             }
         } break;
@@ -726,7 +728,13 @@ VLIBPROC bool VL_CopyDirectoryRecursively_Opt(struct VL_CopyDirectoryRecursively
     if(opt.ext == 0) opt.ext = "";
 
     VL_Log(VL_ECHO, "copying %s/*%s -> %s", opt.src, opt.ext, opt.dst);
-    return VL_CopyDirectoryRecursively_Impl(opt.src, opt.dst, opt.ext);
+
+    vl_log_level prevLogLevel = VL_MinimalLogLevel;
+    VL_MinimalLogLevel = VL_INFO;
+    bool ok = VL_CopyDirectoryRecursively_Impl(opt.src, opt.dst, opt.ext);
+    VL_MinimalLogLevel = prevLogLevel;
+
+    return ok;
 }
 
 VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, vl_file_paths *children)
@@ -1499,23 +1507,6 @@ VLIBPROC const char *VL_temp_GetCurrentDir(void)
 #endif // _WIN32
 }
 
-VLIBPROC bool VL_SetCurrentDir(const char *path)
-{
-#ifdef _WIN32
-    if(!SetCurrentDirectory(path)) {
-        VL_Log(VL_ERROR, "could not set current directory to %s: %s", path, Win32_ErrorMessage(GetLastError()));
-        return false;
-    }
-    return true;
-#else
-    if(chdir(path) < 0) {
-        VL_Log(VL_ERROR, "could not set current directory to %s: %s", path, strerror(errno));
-        return false;
-    }
-    return true;
-#endif // _WIN32
-}
-
 struct vl__pushd_buf_type VL__pushDirectoryBuffer;
 
 VLIBPROC bool VL_Pushd(const char *path)
@@ -1533,6 +1524,12 @@ VLIBPROC bool VL_Pushd(const char *path)
         VL__pushDirectoryBuffer.items[VL__pushDirectoryBuffer.count] = 
             temp_sprintf("%s/%s", VL__pushDirectoryBuffer.items[VL__pushDirectoryBuffer.count - 1], path);
         VL__pushDirectoryBuffer.count++;
+    } else {
+#if defined(_WIN32)
+        VL_Log(VL_ERROR, "could not set current directory to %s: %s", path, Win32_ErrorMessage(GetLastError()));
+#else
+        VL_Log(VL_ERROR, "could not set current directory to %s: %s", path, strerror(errno));
+#endif
     }
     return ok;
 }
@@ -1540,8 +1537,16 @@ VLIBPROC bool VL_Pushd(const char *path)
 VLIBPROC bool VL_Popd(void)
 {
     AssertMsg(VL__pushDirectoryBuffer.count > 1, "Need to do pushd before popd");
-    bool ok = VL_SetCurrentDir(VL__pushDirectoryBuffer.items[VL__pushDirectoryBuffer.count - 2]);
+    const char *path = VL__pushDirectoryBuffer.items[VL__pushDirectoryBuffer.count - 2];
+    bool ok = VL_SetCurrentDir(path);
     if(ok) VL__pushDirectoryBuffer.count--;
+    else {
+#if defined(_WIN32)
+        VL_Log(VL_ERROR, "could not set current directory to %s: %s", path, Win32_ErrorMessage(GetLastError()));
+#else
+        VL_Log(VL_ERROR, "could not set current directory to %s: %s", path, strerror(errno));
+#endif
+    }
     return ok;
 }
 
@@ -1696,7 +1701,7 @@ VLIBPROC void VL_ccDebug_Opt(struct compiler_info_opts opt)
     }
 }
 
-VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, char **libs, size_t libcount)
+VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, size_t libcount)
 {
     if(opt.cc == CCompiler_MSVC && !opt.cmd->msvc_linkflags) {
         cmd_Append(opt.cmd, "/link");

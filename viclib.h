@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.5.0
+--version: 1.5.1
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -311,9 +311,9 @@ typedef struct {
 # define VIEWPROC VLIBPROC
 #endif
 
-#ifndef strlen
+#ifndef VL_INC_STRING_H
 size_t strlen(const char *s);
-#endif // strlen
+#endif // VL_INC_STRING_H
 
 int is_space(int _c); // only checks ascii space characters
 VIEWPROC view view_FromParts(const char *data, size_t count);
@@ -449,6 +449,8 @@ ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **Spli
 # define temp_strndup(s, n) Arena_strndup(&ArenaTemp, s, n)
 # define temp_save() ArenaTemp.Used
 # define temp_rewind(checkpoint) ArenaTemp.Used = checkpoint;
+
+
 #endif
 
 ////////////////////////////////
@@ -485,6 +487,10 @@ RESTORE_WARNINGS
 
 #ifndef READ_ENTIRE_FILE_MAX
 #define READ_ENTIRE_FILE_MAX 0xFFFFFFFF
+#endif
+
+#if defined(_WINBASE_) || defined(_UNISTD_H_)
+VLIBPROC bool VL_SetCurrentDir(const char *path);
 #endif
 
 #if defined(_APISETFILE_) || defined(VL_FILE_LINUX)
@@ -1230,6 +1236,18 @@ ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem)
 }
 
 ////////////////////////////////
+
+#if defined(_WINBASE_)
+VLIBPROC bool VL_SetCurrentDir(const char *path)
+{
+    return SetCurrentDirectory(path);
+}
+#elif defined(_UNISTD_H_)
+VLIBPROC bool VL_SetCurrentDir(const char *path)
+{
+    return chdir(path) >= 0;
+}
+#endif
 
 #if defined(_APISETFILE_) // windows fileapi.h included
 VLIBPROC bool GetLastWriteTime(const char *file, u64 *WriteTime)
