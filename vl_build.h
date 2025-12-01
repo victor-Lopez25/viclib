@@ -112,7 +112,7 @@ struct VL_CopyDirectoryRecursively_opts {
 VLIBPROC bool MkdirIfNotExist(const char *path);
 VLIBPROC bool VL_CopyFile(const char *src, const char *dst);
 #define VL_CopyDirectoryRecursively(src_path, ...) \
-    VL_CopyDirectoryRecursively_Opt((VL_Copy_Dir_Opt){.src = (src_path), __VA_ARGS__})
+    VL_CopyDirectoryRecursively_Opt((struct VL_CopyDirectoryRecursively_opts){.src = (src_path), __VA_ARGS__})
 VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src_path, const char *dst_path, const char *ext);
 VLIBPROC bool VL_CopyDirectoryRecursively_Opt(struct VL_CopyDirectoryRecursively_opts opt);
 VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, vl_file_paths *children);
