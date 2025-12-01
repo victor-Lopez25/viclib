@@ -1,10 +1,10 @@
-#define VL_REBUILD_URSELF(bin, src) VL_DEFAULT_REBUILD_URSELF(bin, src), "-Zi"
+#define VL_REBUILD_URSELF(bin, src) VL_DEFAULT_REBUILD_URSELF(bin, src), VL_CC_DEBUG_INFO
 #define VL_BUILD_IMPLEMENTATION
 #include "../vl_build.h"
 
 void CompileStuff(void)
 {
-    VL_cmd cmd = {0};
+    vl_cmd cmd = {0};
 
     VL_cc(&cmd);
     cmd_Append(&cmd, "../src/test.c");
@@ -41,15 +41,15 @@ void TestNeedsRebuild(void)
 
 int main(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    //VL_GO_REBUILD_URSELF(argc, argv, "vl_build.h");
+    VL_GO_REBUILD_URSELF(argc, argv, "vl_build.h");
 
-    //MkdirIfNotExist("bin");
-    //VL_Pushd("bin");
-    //CompileStuff();
-    //VL_Popd();
+    MkdirIfNotExist("bin");
+    VL_Pushd("bin");
+    LogTimeBetween(CompileStuff(), "Build ");
+    VL_Popd();
 
     //TestNeedsRebuild();
+
     if(VL_Needs_C_Rebuild("test_vl_build" VL_EXE_EXTENSION, "src/test_vl_build.c")) {
         printf("Needs rebuild\n");
     } else {

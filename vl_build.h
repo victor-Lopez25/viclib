@@ -24,9 +24,9 @@
 # define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <direct.h>
-typedef HANDLE VL_Proc;
+typedef HANDLE vl_proc;
 # define VL_INVALID_PROC INVALID_HANDLE_VALUE
-typedef HANDLE VL_Fd;
+typedef HANDLE vl_fd;
 # define VL_INVALID_FD INVALID_HANDLE_VALUE
 #else
 #include <sys/types.h>
@@ -34,9 +34,10 @@ typedef HANDLE VL_Fd;
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
-typedef int VL_Proc;
+#include <time.h>
+typedef int vl_proc;
 # define VL_INVALID_PROC (-1)
-typedef int VL_Fd;
+typedef int vl_fd;
 # define VL_INVALID_FD (-1)
 #endif
 
@@ -45,9 +46,9 @@ typedef int VL_Fd;
 #define VL_REALLOC realloc
 #define VL_FREE free
 
-VLIBPROC VL_Fd VL_fd_OpenForRead(const char *path);
-VLIBPROC VL_Fd VL_fd_OpenForWrite(const char *path);
-VLIBPROC void VL_fd_Close(VL_Fd fd);
+VLIBPROC vl_fd fd_OpenForRead(const char *path);
+VLIBPROC vl_fd fd_OpenForWrite(const char *path);
+VLIBPROC void fd_Close(vl_fd fd);
 
 #if defined(__GNUC__) || defined(__clang__)
 //   https://gcc.gnu.org/onlinedocs/gcc-4.7.2/gcc/Function-Attributes.html
@@ -67,22 +68,39 @@ VLIBPROC void VL_fd_Close(VL_Fd fd);
 #define VL_TODO(msg) PRAGMA(message("TODO: " msg))
 #endif
 
+#ifndef PRINT_TIME_Fmt
+# define PRINT_TIME_Fmt "%llumins %02usecs %03u.%03u%03ums"
+#endif
+
+#ifndef PRINT_TIME_Arg
+# define PRINT_TIME_Arg(time) (time/60000000000), (uint32_t)((time/1000000000)%60), \
+    (uint32_t)((time/1000000)%1000), (uint32_t)((time/1000)%1000), (uint32_t)(time%1000)
+#endif
+
+#define LogTimeBetween(stmt, msg) \
+    do { \
+        u64 glue(timer_, __LINE__) = VL_GetNanos(); \
+        stmt;                                             \
+        glue(timer_, __LINE__) = VL_GetNanos() - glue(timer_, __LINE__); \
+        VL_Log(VL_INFO, "%sTime taken: "PRINT_TIME_Fmt, msg, PRINT_TIME_Arg(glue(timer_, __LINE__))); \
+    } while(0)
+
 typedef enum {
     VL_ECHO,
     VL_INFO,
     VL_WARNING,
     VL_ERROR,
     VL_QUIET = 8, // in case you want to put something before
-} VL_log_level;
+} vl_log_level;
 
-extern VL_log_level VL_MinimalLogLevel;
-VLIBPROC void VL_Log(VL_log_level lvl, const char *fmt, ...) VL_PRINTF_FORMAT(2, 3);
+extern vl_log_level VL_MinimalLogLevel;
+VLIBPROC void VL_Log(vl_log_level lvl, const char *fmt, ...) VL_PRINTF_FORMAT(2, 3);
 
 typedef struct {
-    const char **Items;
-    size_t Count;
-    size_t Capacity;
-} VL_file_paths;
+    const char **items;
+    size_t count;
+    size_t capacity;
+} vl_file_paths;
 
 struct VL_CopyDirectoryRecursively_opts {
     const char *src;
@@ -96,8 +114,8 @@ VLIBPROC bool VL_CopyFile(const char *src, const char *dst);
     VL_CopyDirectoryRecursively_Opt((VL_Copy_Dir_Opt){.src = (src_path), __VA_ARGS__})
 VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src_path, const char *dst_path, const char *ext);
 VLIBPROC bool VL_CopyDirectoryRecursively_Opt(struct VL_CopyDirectoryRecursively_opts opt);
-VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, VL_file_paths *children);
-VLIBPROC bool VL_ReadEntireDir(const char *parent, VL_file_paths *children);
+VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, vl_file_paths *children);
+VLIBPROC bool VL_ReadEntireDir(const char *parent, vl_file_paths *children);
 VLIBPROC bool VL_WriteEntireFile(const char *path, const void *data, size_t size);
 VLIBPROC bool VL_DeleteFile(const char *path);
 
@@ -114,45 +132,45 @@ VLIBPROC bool VL_DeleteFile(const char *path);
 
 #define da_Reserve(da, ExpectedCapacity)                                                 \
     do {                                                                                 \
-        if((ExpectedCapacity) > (da)->Capacity) {                                        \
-            if((da)->Capacity == 0) {                                                    \
-                (da)->Capacity = VL_DA_INIT_CAP;                                         \
+        if((ExpectedCapacity) > (da)->capacity) {                                        \
+            if((da)->capacity == 0) {                                                    \
+                (da)->capacity = VL_DA_INIT_CAP;                                         \
             }                                                                            \
-            while((ExpectedCapacity) > (da)->Capacity) {                                 \
-                (da)->Capacity *= 2;                                                     \
+            while((ExpectedCapacity) > (da)->capacity) {                                 \
+                (da)->capacity *= 2;                                                     \
             }                                                                            \
-            (da)->Items = VL_DECLTYPE_CAST((da)->Items)VL_REALLOC((da)->Items, (da)->Capacity * sizeof(*(da)->Items)); \
-            Assert((da)->Items != NULL && "Buy more RAM lol");                           \
+            (da)->items = VL_DECLTYPE_CAST((da)->items)VL_REALLOC((da)->items, (da)->capacity * sizeof(*(da)->items)); \
+            Assert((da)->items != NULL && "Buy more RAM lol");                           \
         }                                                                                \
     } while(0)
 
 #define da_AppendMany(da, NewItems, NewItemCount)                                       \
     do {                                                                                \
-        da_Reserve((da), (da)->Count + (NewItemCount));                                 \
-        memcpy((da)->Items + (da)->Count, (NewItems), (NewItemCount)*sizeof(*(da)->Items)); \
-        (da)->Count += (NewItemCount);                                                  \
+        da_Reserve((da), (da)->count + (NewItemCount));                                 \
+        memcpy((da)->items + (da)->count, (NewItems), (NewItemCount)*sizeof(*(da)->items)); \
+        (da)->count += (NewItemCount);                                                  \
     } while(0)
 
 #define da_Append(da, item)                  \
     do {                                     \
-        da_Reserve((da), (da)->Count + 1);   \
-        (da)->Items[(da)->Count++] = (item); \
+        da_Reserve((da), (da)->count + 1);   \
+        (da)->items[(da)->count++] = (item); \
     } while(0)
 
-#define da_Free(da) VL_FREE((da).Items)
+#define da_Free(da) VL_FREE((da).items)
 #define da_RemoveUnordered(da, i)                    \
     do {                                             \
         size_t j = (i);                              \
-        Assert(j < (da)->Count);                     \
-        (da)->Items[j] = (da)->Items[--(da)->Count]; \
+        Assert(j < (da)->count);                     \
+        (da)->items[j] = (da)->items[--(da)->count]; \
     } while(0)
 
-#define da_Foreach(Type, it, da) for(Type *it = (da)->Items; it < (da)->Items + (da)->Count; ++it)
+#define da_Foreach(Type, it, da) for(Type *it = (da)->items; it < (da)->items + (da)->count; ++it)
 
 typedef struct {
-    char *Items;
-    size_t Count;
-    size_t Capacity;
+    char *items;
+    size_t count;
+    size_t capacity;
 } string_builder;
 
 VLIBPROC bool sb_ReadEntireFile(const char *path, string_builder *sb);
@@ -170,54 +188,54 @@ VLIBPROC bool sb_PadAlign(string_builder *sb, size_t size);
     } while (0)
 
 #define sb_AppendNull(sb) da_Append(sb, 0)
-#define sb_Free(sb) VL_FREE((sb).Items)
+#define sb_Free(sb) VL_FREE((sb).items)
 
 typedef struct {
-    VL_Proc *Items;
-    size_t Count;
-    size_t Capacity;
-} VL_Procs;
+    vl_proc *items;
+    size_t count;
+    size_t capacity;
+} vl_procs;
 
 // Wait until the process has finished
-VLIBPROC bool VL_ProcWait(VL_Proc proc);
+VLIBPROC bool VL_ProcWait(vl_proc proc);
 
 // Pretty hard to understand, so it's marked as private
-VLIBPROC int VL__ProcWaitAsync(VL_Proc proc, int ms);
+VLIBPROC int VL__ProcWaitAsync(vl_proc proc, int ms);
 
 // Wait until all the processes have finished
-VLIBPROC bool VL_ProcsWait(VL_Procs procs);
+VLIBPROC bool VL_ProcsWait(vl_procs procs);
 
 // Wait until all the processes have finished and empty the procs array.
-VLIBPROC bool VL_ProcsFlush(VL_Procs *procs);
+VLIBPROC bool VL_ProcsFlush(vl_procs *procs);
 
 typedef struct {
-    const char **Items;
-    size_t Count;
-    size_t Capacity;
+    const char **items;
+    size_t count;
+    size_t capacity;
 #if OS_WINDOWS
     bool msvc_linkflags; // need some way to know if you specified /link at some point
 #endif
-} VL_cmd;
+} vl_cmd;
 
 typedef struct {
-    VL_cmd *cmd;
+    vl_cmd *cmd;
     // Run the command asynchronously appending its VL_Proc to the provided VL_Procs array
-    VL_Procs *async;
+    vl_procs *async;
     // Maximum processes in the .async list. 
     size_t maxProcs;
     // redirect to file or 'nul' for /dev/null or nul on windows
     const char *stdinPath;
     const char *stdoutPath;
     const char *stderrPath;
-} VL_cmd_opts;
+} vl_cmd_opts;
 
 // Render a string representation of a command into a string builder. Keep in mind the the
 // string builder is not NULL-terminated by default. Use sb_AppendNull if you plan to
 // use it as a C string.
-VLIBPROC void VL_CmdRender(VL_cmd cmd, string_builder *render);
+VLIBPROC void VL_CmdRender(vl_cmd cmd, string_builder *render);
 
-VLIBPROC bool CmdRun_Opt(VL_cmd_opts opt);
-#define CmdRun(Cmd, ...) CmdRun_Opt((VL_cmd_opts){.cmd = (Cmd), __VA_ARGS__})
+VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt);
+#define CmdRun(Cmd, ...) CmdRun_Opt((vl_cmd_opts){.cmd = (Cmd), __VA_ARGS__})
 
 #define cmd_Append(cmd, ...) \
     da_AppendMany(cmd, \
@@ -225,9 +243,9 @@ VLIBPROC bool CmdRun_Opt(VL_cmd_opts opt);
                   (sizeof((const char*[]){__VA_ARGS__})/sizeof(const char*)))
 
 #define cmd_Extend(cmd, other_cmd) \
-    da_AppendMany(cmd, (other_cmd)->Items, (other_cmd)->Count)
+    da_AppendMany(cmd, (other_cmd)->items, (other_cmd)->count)
 
-#define cmd_Free(cmd) VL_FREE(cmd.Items)
+#define cmd_Free(cmd) VL_FREE(cmd.items)
 
 VLIBPROC int VL_GetCountProcs(void);
 
@@ -237,11 +255,11 @@ VLIBPROC char *temp_sprintf(const char *fmt, ...) VL_PRINTF_FORMAT(1, 2);
 # define VL_PUSHD_BUF_MAX 32
 #endif
 
-struct VL__pushd_buf_type {
-    const char *Items[VL_PUSHD_BUF_MAX];
-    int Count;
+struct vl__pushd_buf_type {
+    const char *items[VL_PUSHD_BUF_MAX];
+    int count;
 };
-extern struct VL__pushd_buf_type VL__pushDirectoryBuffer;
+extern struct vl__pushd_buf_type VL__pushDirectoryBuffer;
 
 // Given any path returns the last part of that path.
 // "/path/to/a/file.c" -> "file.c"; "/path/to/a/directory" -> "directory"
@@ -264,12 +282,12 @@ VLIBPROC bool VL_GetLastWriteTime(const char *file, u64 *writeTime);
 #define VL_NeedsRebuild(out, in, ...) VL_NeedsRebuild_Impl(out, ((const char*[]){in, __VA_ARGS__}), sizeof((const char*[]){in, __VA_ARGS__})/sizeof(const char*))
 VLIBPROC int VL_NeedsRebuild_Impl(const char *output_path, const char **input_paths, size_t input_paths_count);
 
-typedef struct VL_filetime_node VL_filetime_node;
-struct VL_filetime_node {
+typedef struct vl_filetime_node vl_filetime_node;
+struct vl_filetime_node {
     view file;
     u64 time;
     //bool exploredAllDependencies;
-    VL_filetime_node *next;
+    vl_filetime_node *next;
 };
 
 #ifndef VL_BUILD_FILETIME_TABLE_SIZE
@@ -277,31 +295,31 @@ struct VL_filetime_node {
 #endif // VL_BUILD_FILETIME_TABLE_SIZE
 
 typedef struct {
-    VL_filetime_node *Items;
-    size_t Count;
-    size_t Capacity;
-} VL_filetime_nodelist;
+    vl_filetime_node *items;
+    size_t count;
+    size_t capacity;
+} vl_filetime_nodelist;
 
 typedef struct {
-    VL_filetime_nodelist nodes;
+    vl_filetime_nodelist nodes;
     uint32_t countTimes;
-} VL_filetime_table;
+} vl_filetime_table;
 
 typedef struct {
-    VL_filetime_table table;
-    VL_filetime_node *freelist;
-    VL_file_paths *includePaths;
+    vl_filetime_table table;
+    vl_filetime_node *freelist;
+    vl_file_paths *includePaths;
     memory_arena *Arena;
-} VL_needrebuild_context;
+} vl_needrebuild_context;
 
-extern VL_needrebuild_context VL_needsRebuildContext;
+extern vl_needrebuild_context VL_needsRebuildContext;
 
 #ifndef VL_BUILD_FILENAME_HASH
 #define VL_BUILD_FILENAME_HASH(v, hash) do {\
     /* djb2 */ \
     hash = 5381; \
-    for(int i = 0; i < (int)v.Len; i++) \
-        hash = ((hash << 5) + hash) + v.Data[i]; /* hash * 33 + c */ \
+    for(int i = 0; i < (int)v.count; i++) \
+        hash = ((hash << 5) + hash) + v.items[i]; /* hash * 33 + c */ \
     } while(0)
 #endif // VL_BUILD_FILENAME_HASH
 
@@ -324,11 +342,11 @@ typedef enum {
     CCompiler_Clang,
     CCompiler_GCC,
 #endif
-} VL_c_compiler;
+} vl_c_compiler;
 
 struct compiler_info_opts {
-    VL_cmd *cmd;
-    VL_c_compiler cc;
+    vl_cmd *cmd;
+    vl_c_compiler cc;
 };
 
 #if OS_WINDOWS
@@ -390,9 +408,9 @@ VLIBPROC char *Win32_ErrorMessage(DWORD err);
 
 #ifdef VL_BUILD_IMPLEMENTATION
 
-static VL_Proc VL__CmdStartProcess(VL_cmd cmd, VL_Fd *fdin, VL_Fd *fdout, VL_Fd *fderr);
+static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd *fderr);
 
-VL_log_level VL_MinimalLogLevel = VL_ECHO;
+vl_log_level VL_MinimalLogLevel = VL_ECHO;
 
 #if !OS_WINDOWS
 #include <dirent.h>
@@ -448,10 +466,10 @@ VLIBPROC char *Win32_ErrorMessage(DWORD err)
 }
 #endif
 
-VLIBPROC VL_Fd VL_fd_OpenForRead(const char *path)
+VLIBPROC vl_fd fd_OpenForRead(const char *path)
 {
 #ifndef _WIN32
-    VL_Fd result = open(path, O_RDONLY);
+    vl_fd result = open(path, O_RDONLY);
     if(result < 0) {
         VL_Log(VL_ERROR, "Could not open file %s: %s", path, strerror(errno));
         return VL_INVALID_FD;
@@ -463,7 +481,7 @@ VLIBPROC VL_Fd VL_fd_OpenForRead(const char *path)
     saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = TRUE;
 
-    VL_Fd result = CreateFile(
+    vl_fd result = CreateFile(
                     path,
                     GENERIC_READ,
                     0,
@@ -481,11 +499,11 @@ VLIBPROC VL_Fd VL_fd_OpenForRead(const char *path)
 #endif // _WIN32
 }
 
-VLIBPROC VL_Fd VL_fd_OpenForWrite(const char *path)
+VLIBPROC vl_fd fd_OpenForWrite(const char *path)
 {
     // TODO: > /dev/null & > nul
 #ifndef _WIN32
-    VL_Fd result = open(path,
+    vl_fd result = open(path,
                      O_WRONLY | O_CREAT | O_TRUNC,
                      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if(result < 0) {
@@ -498,7 +516,7 @@ VLIBPROC VL_Fd VL_fd_OpenForWrite(const char *path)
     saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = TRUE;
 
-    VL_Fd result = CreateFile(
+    vl_fd result = CreateFile(
                     path,                            // name of the write
                     GENERIC_WRITE,                   // open for writing
                     0,                               // do not share
@@ -517,7 +535,7 @@ VLIBPROC VL_Fd VL_fd_OpenForWrite(const char *path)
 #endif // _WIN32
 }
 
-VLIBPROC void VL_fd_Close(VL_Fd fd)
+VLIBPROC void fd_Close(vl_fd fd)
 {
 #ifdef _WIN32
     CloseHandle(fd);
@@ -526,7 +544,7 @@ VLIBPROC void VL_fd_Close(VL_Fd fd)
 #endif // _WIN32
 }
 
-VLIBPROC void VL_Log(VL_log_level lvl, const char *fmt, ...)
+VLIBPROC void VL_Log(vl_log_level lvl, const char *fmt, ...)
 {
     if(lvl < VL_MinimalLogLevel) return;
 
@@ -639,12 +657,12 @@ defer:
 VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src, const char *dst, const char *ext)
 {
     bool result = true;
-    VL_file_paths children = {0};
+    vl_file_paths children = {0};
     string_builder srcSb = {0};
     string_builder dstSb = {0};
     size_t tempCheckpoint = temp_save();
 
-    VL_file_type type = VL_GetFileType(src);
+    file_type type = VL_GetFileType(src);
     if(type < 0) return false;
 
     switch(type) {
@@ -652,23 +670,23 @@ VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src, const char *dst,
             if(!MkdirIfNotExist(dst)) VL_ReturnDefer(false);
             if(!VL_ReadEntireDir(src, &children)) VL_ReturnDefer(false);
 
-            for(size_t i = 0; i < children.Count; i++) {
-                if(!strcmp(children.Items[i], ".")) continue;
-                if(!strcmp(children.Items[i], "..")) continue;
+            for(size_t i = 0; i < children.count; i++) {
+                if(!strcmp(children.items[i], ".")) continue;
+                if(!strcmp(children.items[i], "..")) continue;
 
-                srcSb.Count = 0;
+                srcSb.count = 0;
                 sb_AppendCstr(&srcSb, src);
                 sb_AppendCstr(&srcSb, "/");
-                sb_AppendCstr(&srcSb, children.Items[i]);
+                sb_AppendCstr(&srcSb, children.items[i]);
                 sb_AppendNull(&srcSb);
 
-                srcSb.Count = 0;
+                srcSb.count = 0;
                 sb_AppendCstr(&dstSb, dst);
                 sb_AppendCstr(&dstSb, "/");
-                sb_AppendCstr(&dstSb, children.Items[i]);
+                sb_AppendCstr(&dstSb, children.items[i]);
                 sb_AppendNull(&dstSb);
 
-                if(!VL_CopyDirectoryRecursively_Impl(srcSb.Items, dstSb.Items, ext)) {
+                if(!VL_CopyDirectoryRecursively_Impl(srcSb.items, dstSb.items, ext)) {
                     VL_ReturnDefer(false);
                 }
             }
@@ -710,31 +728,31 @@ VLIBPROC bool VL_CopyDirectoryRecursively_Opt(struct VL_CopyDirectoryRecursively
     return VL_CopyDirectoryRecursively_Impl(opt.src, opt.dst, opt.ext);
 }
 
-VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, VL_file_paths *children)
+VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, vl_file_paths *children)
 {
     bool result = true;
     
-    VL_file_paths children_tmp = {0};
+    vl_file_paths children_tmp = {0};
     string_builder src_sb = {0};
 
-    VL_file_type type = VL_GetFileType(parent);
+    file_type type = VL_GetFileType(parent);
     if(type < 0) return false;
 
     switch(type) {
         case VL_FILE_DIRECTORY: {
             if(!VL_ReadEntireDir(parent, &children_tmp)) VL_ReturnDefer(false);
 
-            for(size_t i = 0; i < children_tmp.Count; ++i) {
-                if(strcmp(children_tmp.Items[i], ".") == 0) continue;
-                if(strcmp(children_tmp.Items[i], "..") == 0) continue;
+            for(size_t i = 0; i < children_tmp.count; ++i) {
+                if(strcmp(children_tmp.items[i], ".") == 0) continue;
+                if(strcmp(children_tmp.items[i], "..") == 0) continue;
 
-                src_sb.Count = 0;
+                src_sb.count = 0;
                 sb_AppendCstr(&src_sb, parent);
                 sb_AppendCstr(&src_sb, "/");
-                sb_AppendCstr(&src_sb, children_tmp.Items[i]);
+                sb_AppendCstr(&src_sb, children_tmp.items[i]);
                 sb_AppendNull(&src_sb);
 
-                if(!VL_ReadDirectoryFilesRecursively(src_sb.Items, children)) {
+                if(!VL_ReadDirectoryFilesRecursively(src_sb.items, children)) {
                     VL_ReturnDefer(false);
                 }
             }
@@ -759,7 +777,7 @@ defer:
     return result;
 }
 
-VLIBPROC bool VL_ReadEntireDir(const char *parent, VL_file_paths *children)
+VLIBPROC bool VL_ReadEntireDir(const char *parent, vl_file_paths *children)
 {
     bool result = true;
     DIR *dir = NULL;
@@ -864,21 +882,21 @@ VLIBPROC bool sb_ReadEntireFile(const char *path, string_builder *sb)
     if(m < 0)                     VL_ReturnDefer(false);
     if(fseek(f, 0, SEEK_SET) < 0) VL_ReturnDefer(false);
 
-    new_count = sb->Count + m;
-    if(new_count > sb->Capacity) {
-        sb->Items = VL_DECLTYPE_CAST(sb->Items)VL_REALLOC(sb->Items, new_count);
-        Assert(sb->Items != NULL && "Buy more RAM lool!!");
-        sb->Capacity = new_count;
+    new_count = sb->count + m;
+    if(new_count > sb->capacity) {
+        sb->items = VL_DECLTYPE_CAST(sb->items)VL_REALLOC(sb->items, new_count);
+        Assert(sb->items != NULL && "Buy more RAM lool!!");
+        sb->capacity = new_count;
     }
 
-    fread(sb->Items + sb->Count, m, 1, f);
+    fread(sb->items + sb->count, m, 1, f);
     if(ferror(f)) {
         // TODO: Afaik, ferror does not set errno. So the error reporting in defer is not correct in this case.
         VL_Log(VL_ERROR, "Could not read file %s", path);
         fclose(f);
         return false;
     }
-    sb->Count = new_count;
+    sb->count = new_count;
 
 defer:
     if(!result) VL_Log(VL_ERROR, "Could not read file %s: %s", path, strerror(errno));
@@ -897,20 +915,20 @@ VLIBPROC int sb_Appendf(string_builder *sb, const char *fmt, ...)
     // NOTE: the new_capacity needs to be +1 because of the null terminator.
     // However, further below we increase sb->count by n, not n + 1.
     // This is because we don't want the sb to include the null terminator. The user can always sb_append_null() if they want it
-    da_Reserve(sb, sb->Count + n + 1);
-    char *dest = sb->Items + sb->Count;
+    da_Reserve(sb, sb->count + n + 1);
+    char *dest = sb->items + sb->count;
     va_start(args, fmt);
     vsnprintf(dest, n+1, fmt, args);
     va_end(args);
 
-    sb->Count += n;
+    sb->count += n;
 
     return n;
 }
 
 VLIBPROC bool sb_PadAlign(string_builder *sb, size_t size)
 {
-    size_t rem = sb->Count%size;
+    size_t rem = sb->count%size;
     if(rem == 0) return true;
     for(size_t i = 0; i < size - rem; ++i) {
         da_Append(sb, 0);
@@ -918,7 +936,7 @@ VLIBPROC bool sb_PadAlign(string_builder *sb, size_t size)
     return true;
 }
 
-VLIBPROC bool VL_ProcWait(VL_Proc proc)
+VLIBPROC bool VL_ProcWait(vl_proc proc)
 {
     if(proc == VL_INVALID_PROC) return false;
 
@@ -975,7 +993,7 @@ VLIBPROC bool VL_ProcWait(VL_Proc proc)
 #endif
 }
 
-VLIBPROC int VL__ProcWaitAsync(VL_Proc proc, int ms)
+VLIBPROC int VL__ProcWaitAsync(vl_proc proc, int ms)
 {
     if (proc == VL_INVALID_PROC) return false;
 
@@ -1048,27 +1066,27 @@ VLIBPROC int VL__ProcWaitAsync(VL_Proc proc, int ms)
 }
 
 // Wait until all the processes have finished
-VLIBPROC bool VL_ProcsWait(VL_Procs procs)
+VLIBPROC bool VL_ProcsWait(vl_procs procs)
 {
     bool ok = true;
-    for(size_t i = 0; i < procs.Count; ++i) {
-        ok = VL_ProcWait(procs.Items[i]) && ok;
+    for(size_t i = 0; i < procs.count; ++i) {
+        ok = VL_ProcWait(procs.items[i]) && ok;
     }
     return ok;
 }
 
 // Wait until all the processes have finished and empty the procs array.
-VLIBPROC bool VL_ProcsFlush(VL_Procs *procs)
+VLIBPROC bool VL_ProcsFlush(vl_procs *procs)
 {
     bool ok = VL_ProcsWait(*procs);
-    procs->Count = 0;
+    procs->count = 0;
     return ok;
 }
 
-VLIBPROC void VL_CmdRender(VL_cmd cmd, string_builder *render)
+VLIBPROC void VL_CmdRender(vl_cmd cmd, string_builder *render)
 {
-    for(size_t i = 0; i < cmd.Count; ++i) {
-        const char *arg = cmd.Items[i];
+    for(size_t i = 0; i < cmd.count; ++i) {
+        const char *arg = cmd.items[i];
         if(arg == NULL) break;
         if(i > 0) sb_AppendCstr(render, " ");
         if(!strchr(arg, ' ')) {
@@ -1081,23 +1099,23 @@ VLIBPROC void VL_CmdRender(VL_cmd cmd, string_builder *render)
     }
 }
 
-VLIBPROC bool CmdRun_Opt(VL_cmd_opts opt)
+VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt)
 {
     bool result = true;
-    VL_Fd fdin = VL_INVALID_FD;
-    VL_Fd fdout = VL_INVALID_FD;
-    VL_Fd fderr = VL_INVALID_FD;
-    VL_Fd *optFdin = 0;
-    VL_Fd *optFdout = 0;
-    VL_Fd *optFderr = 0;
+    vl_fd fdin = VL_INVALID_FD;
+    vl_fd fdout = VL_INVALID_FD;
+    vl_fd fderr = VL_INVALID_FD;
+    vl_fd *optFdin = 0;
+    vl_fd *optFdout = 0;
+    vl_fd *optFderr = 0;
 
     size_t max_procs = opt.maxProcs > 0 ? opt.maxProcs : (size_t) VL_GetCountProcs() + 1;
 
     // TODO: Async
     if(opt.async && max_procs > 0) {
-        while(opt.async->Count >= max_procs) {
-            for(size_t i = 0; i < opt.async->Count; ++i) {
-                int ret = VL__ProcWaitAsync(opt.async->Items[i], 1);
+        while(opt.async->count >= max_procs) {
+            for(size_t i = 0; i < opt.async->count; ++i) {
+                int ret = VL__ProcWaitAsync(opt.async->items[i], 1);
                 if(ret < 0) VL_ReturnDefer(false);
                 if(ret) {
                     da_RemoveUnordered(opt.async, i);
@@ -1109,21 +1127,21 @@ VLIBPROC bool CmdRun_Opt(VL_cmd_opts opt)
 
     // TODO: > /dev/null & > nul
     if(opt.stdinPath) {
-        fdin = VL_fd_OpenForRead(opt.stdinPath);
+        fdin = fd_OpenForRead(opt.stdinPath);
         if(fdin == VL_INVALID_FD) VL_ReturnDefer(false);
         optFdin = &fdin;
     }
     if(opt.stdoutPath) {
-        fdout = VL_fd_OpenForWrite(opt.stdoutPath);
+        fdout = fd_OpenForWrite(opt.stdoutPath);
         if(fdout == VL_INVALID_FD) VL_ReturnDefer(false);
         optFdout = &fdout;
     }
     if(opt.stderrPath) {
-        fderr = VL_fd_OpenForWrite(opt.stderrPath);
+        fderr = fd_OpenForWrite(opt.stderrPath);
         if(fderr == VL_INVALID_FD) VL_ReturnDefer(false);
         optFderr = &fderr;
     }
-    VL_Proc proc = VL__CmdStartProcess(*opt.cmd, optFdin, optFdout, optFderr);
+    vl_proc proc = VL__CmdStartProcess(*opt.cmd, optFdin, optFdout, optFderr);
 
     if(opt.async) {
         if(proc == VL_INVALID_PROC) VL_ReturnDefer(false);
@@ -1133,10 +1151,10 @@ VLIBPROC bool CmdRun_Opt(VL_cmd_opts opt)
     }
 
 defer:
-    if(optFdin)  VL_fd_Close(*optFdin);
-    if(optFdout) VL_fd_Close(*optFdout);
-    if(optFderr) VL_fd_Close(*optFderr);
-    opt.cmd->Count = 0;
+    if(optFdin)  fd_Close(*optFdin);
+    if(optFdout) fd_Close(*optFdout);
+    if(optFderr) fd_Close(*optFderr);
+    opt.cmd->count = 0;
     return result;
 }
 
@@ -1231,47 +1249,47 @@ VLIBPROC int VL_NeedsRebuild_Impl(const char *output_path, const char **input_pa
     return 0;
 }
 
-VL_needrebuild_context VL_needsRebuildContext = {0};
+vl_needrebuild_context VL_needsRebuildContext = {0};
 
 VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input_paths, size_t input_paths_count)
 {
-    VL_needrebuild_context *ctx = &VL_needsRebuildContext;
+    vl_needrebuild_context *ctx = &VL_needsRebuildContext;
     Assert(ctx->Arena != &ArenaTemp);
-    if(ctx->table.nodes.Items == 0) {
-        ctx->table.nodes.Capacity = VL_BUILD_FILETIME_TABLE_SIZE;
-        ctx->table.nodes.Items = (VL_filetime_node*)VL_REALLOC(0, ctx->table.nodes.Capacity*sizeof(VL_filetime_node));
-        mem_zero(ctx->table.nodes.Items, ctx->table.nodes.Capacity*sizeof(VL_filetime_node));
-        ctx->table.nodes.Count = 0;
+    if(ctx->table.nodes.items == 0) {
+        ctx->table.nodes.capacity = VL_BUILD_FILETIME_TABLE_SIZE;
+        ctx->table.nodes.items = (vl_filetime_node*)VL_REALLOC(0, ctx->table.nodes.capacity*sizeof(vl_filetime_node));
+        mem_zero(ctx->table.nodes.items, ctx->table.nodes.capacity*sizeof(vl_filetime_node));
+        ctx->table.nodes.count = 0;
     }
-    Assert((ctx->table.nodes.Capacity & (ctx->table.nodes.Capacity-1)) == 0); /* capacity must be power of 2 */
+    Assert((ctx->table.nodes.capacity & (ctx->table.nodes.capacity-1)) == 0); /* capacity must be power of 2 */
 
     u64 outputFileTime;
     if(!GetLastWriteTime(output_path, &outputFileTime)) return 1;
 
     bool result = false;
     string_builder sb = {0};
-    VL_file_paths searchPaths = {0};
-    VL_file_paths searchPathsDone = {0};
+    vl_file_paths searchPaths = {0};
+    vl_file_paths searchPathsDone = {0};
 
     size_t startTempMark = temp_save();
 
     u32 hashval;
     da_AppendMany(&searchPaths, input_paths, input_paths_count);
     // TODO: Need some way to know if I explored all dependencies of a specific file
-    while(searchPaths.Count > 0) {
-        char *currPath = (char*)searchPaths.Items[0];
+    while(searchPaths.count > 0) {
+        char *currPath = (char*)searchPaths.items[0];
         view vPath = view_FromCstr(currPath);
 
         da_Append(&searchPathsDone, currPath);
         // unordered remove in each iteration
-        searchPaths.Count--;
-        searchPaths.Items[0] = searchPaths.Items[searchPaths.Count];
+        searchPaths.count--;
+        searchPaths.items[0] = searchPaths.items[searchPaths.count];
 
         VL_BUILD_FILENAME_HASH(vPath, hashval);
-        hashval &= ctx->table.nodes.Capacity - 1;
-        VL_filetime_node *node = &ctx->table.nodes.Items[hashval];
-        VL_filetime_node prev_ = {.next = node};
-        VL_filetime_node *prev = &prev_;
+        hashval &= ctx->table.nodes.capacity - 1;
+        vl_filetime_node *node = &ctx->table.nodes.items[hashval];
+        vl_filetime_node prev_ = {.next = node};
+        vl_filetime_node *prev = &prev_;
         while(prev->next && !view_Eq(prev->next->file, vPath)) {
             prev = prev->next;
         }
@@ -1284,9 +1302,9 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
                 prev->next = ctx->freelist;
                 ctx->freelist = ctx->freelist->next;
             } else if(ctx->Arena) {
-                prev->next = PushStruct(ctx->Arena, VL_filetime_node);
+                prev->next = PushStruct(ctx->Arena, vl_filetime_node);
             } else {
-                prev->next = (VL_filetime_node*)VL_REALLOC(0, sizeof(VL_filetime_node));
+                prev->next = (vl_filetime_node*)VL_REALLOC(0, sizeof(vl_filetime_node));
             }
             prev->next->file = vPath;
             prev->next->time = inputFileTime;
@@ -1294,47 +1312,47 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
             //prev->next->exploredAllDependencies = false;
 
             ctx->table.countTimes++;
-            if(ctx->table.countTimes > (ctx->table.nodes.Capacity >> 1)) {
+            if(ctx->table.countTimes > (ctx->table.nodes.capacity >> 1)) {
                 /* Resize the hash table, this is pretty slow... */
-                VL_filetime_nodelist newNodes;
-                newNodes.Capacity = ctx->table.nodes.Capacity << 1,
-                newNodes.Items = VL_REALLOC(0, newNodes.Capacity*sizeof(VL_filetime_node));
-                newNodes.Count = 0;
+                vl_filetime_nodelist newNodes;
+                newNodes.capacity = ctx->table.nodes.capacity << 1,
+                newNodes.items = VL_REALLOC(0, newNodes.capacity*sizeof(vl_filetime_node));
+                newNodes.count = 0;
 
-                for(size_t i = 0; i < ctx->table.nodes.Count; i++) {
-                    if(ctx->table.nodes.Items[i].file.Len != 0) {
-                        VL_filetime_node *oldnode = &ctx->table.nodes.Items[i];
+                for(size_t i = 0; i < ctx->table.nodes.count; i++) {
+                    if(ctx->table.nodes.items[i].file.count != 0) {
+                        vl_filetime_node *oldnode = &ctx->table.nodes.items[i];
                         for(; oldnode; oldnode = oldnode->next) {
                             VL_BUILD_FILENAME_HASH(oldnode->file, hashval);
-                            hashval &= newNodes.Capacity - 1;
+                            hashval &= newNodes.capacity - 1;
                             
-                            VL_filetime_node newPrev_ = {.next = &newNodes.Items[hashval]};
-                            VL_filetime_node *newPrev = &newPrev_;
-                            if(newPrev->next->file.Len != 0) {
+                            vl_filetime_node newPrev_ = {.next = &newNodes.items[hashval]};
+                            vl_filetime_node *newPrev = &newPrev_;
+                            if(newPrev->next->file.count != 0) {
                                 while(newPrev->next) prev = prev->next;
                                 if(ctx->freelist) {
                                     prev->next = ctx->freelist;
                                     ctx->freelist = ctx->freelist->next;
                                 } else if(ctx->Arena) {
-                                    prev->next = PushStruct(ctx->Arena, VL_filetime_node);
+                                    prev->next = PushStruct(ctx->Arena, vl_filetime_node);
                                 } else {
-                                    prev->next = (VL_filetime_node*)VL_REALLOC(0, sizeof(VL_filetime_node));
+                                    prev->next = (vl_filetime_node*)VL_REALLOC(0, sizeof(vl_filetime_node));
                                 }
                             } else {
-                                newNodes.Count++;
+                                newNodes.count++;
                             }
                             prev->next->file = oldnode->file;
                             prev->next->time = oldnode->time;
                             prev->next->next = 0;
 
-                            VL_filetime_node *nextFree = ctx->freelist;
+                            vl_filetime_node *nextFree = ctx->freelist;
                             ctx->freelist = oldnode;
                             ctx->freelist->next = nextFree;
                         }
                     }
                 }
 
-                VL_FREE(ctx->table.nodes.Items);
+                VL_FREE(ctx->table.nodes.items);
                 ctx->table.nodes = newNodes;
             }
         }
@@ -1345,13 +1363,13 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
         }
         
         //if(!node->exploredAllDependencies) {
-            sb.Count = 0;
-            if(!sb_ReadEntireFile(vPath.Data, &sb)) continue;
+            sb.count = 0;
+            if(!sb_ReadEntireFile(vPath.items, &sb)) continue;
 
             sb_AppendNull(&sb);
 
             // TODO: Check if smarter parsing, where we don't try to do anything when it's commented out (in a multiline comment) is any better/quicker (I don't think so)
-            char *ptr = sb.Items;
+            char *ptr = sb.items;
             while(ptr) {
                 // TODO: Use viclib's view parsing for this when view_Contains is redone
                 ptr = strstr(ptr, "\n#include");
@@ -1398,8 +1416,8 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
                 }
 
                 if(ctx->includePaths) {
-                    for(size_t incIdx = 0; incIdx < ctx->includePaths->Count; incIdx++) {
-                        char *path = temp_sprintf("%s/%s", ctx->includePaths->Items[incIdx], filename);
+                    for(size_t incIdx = 0; incIdx < ctx->includePaths->count; incIdx++) {
+                        char *path = temp_sprintf("%s/%s", ctx->includePaths->items[incIdx], filename);
                         if(VL_FileExists(path)) {
                             LinearSearch(&searchPathsDone, path, !strcmp);
                             temp_rewind(tempMark);
@@ -1407,7 +1425,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
                                 break;
                             } else {
                                 // Found in 3.
-                                path = temp_sprintf("%s/%s", ctx->includePaths->Items[incIdx], filename);
+                                path = temp_sprintf("%s/%s", ctx->includePaths->items[incIdx], filename);
                                 LinearSearch(&searchPaths, path, !strcmp);
                                 if(!found) da_Append(&searchPaths, path);
                                 else temp_rewind(tempMark);
@@ -1497,32 +1515,32 @@ VLIBPROC bool VL_SetCurrentDir(const char *path)
 #endif // _WIN32
 }
 
-struct VL__pushd_buf_type VL__pushDirectoryBuffer;
+struct vl__pushd_buf_type VL__pushDirectoryBuffer;
 
 VLIBPROC bool VL_Pushd(const char *path)
 {
     static bool initialized = false;
     if(!initialized) {
         initialized = true;
-        VL__pushDirectoryBuffer.Items[0] = temp_strdup(VL_temp_GetCurrentDir());
-        VL__pushDirectoryBuffer.Count = 1;
+        VL__pushDirectoryBuffer.items[0] = temp_strdup(VL_temp_GetCurrentDir());
+        VL__pushDirectoryBuffer.count = 1;
     }
 
-    AssertMsgAlways((VL__pushDirectoryBuffer.Count+1) < VL_PUSHD_BUF_MAX, "Increase the size of the pushd buffer (VL_PUSHD_BUF_MAX)");
+    AssertMsgAlways((VL__pushDirectoryBuffer.count+1) < VL_PUSHD_BUF_MAX, "Increase the size of the pushd buffer (VL_PUSHD_BUF_MAX)");
     bool ok = VL_SetCurrentDir(path);
     if(ok) {
-        VL__pushDirectoryBuffer.Items[VL__pushDirectoryBuffer.Count] = 
-            temp_sprintf("%s/%s", VL__pushDirectoryBuffer.Items[VL__pushDirectoryBuffer.Count - 1], path);
-        VL__pushDirectoryBuffer.Count++;
+        VL__pushDirectoryBuffer.items[VL__pushDirectoryBuffer.count] = 
+            temp_sprintf("%s/%s", VL__pushDirectoryBuffer.items[VL__pushDirectoryBuffer.count - 1], path);
+        VL__pushDirectoryBuffer.count++;
     }
     return ok;
 }
 
 VLIBPROC bool VL_Popd(void)
 {
-    AssertMsg(VL__pushDirectoryBuffer.Count > 1, "Need to do pushd before popd");
-    bool ok = VL_SetCurrentDir(VL__pushDirectoryBuffer.Items[VL__pushDirectoryBuffer.Count - 2]);
-    if(ok) VL__pushDirectoryBuffer.Count--;
+    AssertMsg(VL__pushDirectoryBuffer.count > 1, "Need to do pushd before popd");
+    bool ok = VL_SetCurrentDir(VL__pushDirectoryBuffer.items[VL__pushDirectoryBuffer.count - 2]);
+    if(ok) VL__pushDirectoryBuffer.count--;
     return ok;
 }
 
@@ -1716,10 +1734,10 @@ VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpat
 }
 
 #if OS_WINDOWS
-static void Win32_CmdQuote(VL_cmd cmd, string_builder *quoted)
+static void Win32_CmdQuote(vl_cmd cmd, string_builder *quoted)
 {
-    for(size_t i = 0; i < cmd.Count; ++i) {
-        const char *arg = cmd.Items[i];
+    for(size_t i = 0; i < cmd.count; ++i) {
+        const char *arg = cmd.items[i];
         if(arg == NULL) break;
         size_t len = strlen(arg);
         if(i > 0) da_Append(quoted, ' ');
@@ -1757,9 +1775,9 @@ static void Win32_CmdQuote(VL_cmd cmd, string_builder *quoted)
 }
 #endif
 
-static VL_Proc VL__CmdStartProcess(VL_cmd cmd, VL_Fd *fdin, VL_Fd *fdout, VL_Fd *fderr)
+static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd *fderr)
 {
-    if(cmd.Count < 1) {
+    if(cmd.count < 1) {
         VL_Log(VL_ERROR, "Could not run empty command");
         return VL_INVALID_PROC;
     }
@@ -1770,7 +1788,7 @@ static VL_Proc VL__CmdStartProcess(VL_cmd cmd, VL_Fd *fdin, VL_Fd *fdout, VL_Fd 
     string_builder sb = {0};
     VL_CmdRender(cmd, &sb);
     sb_AppendNull(&sb);
-    VL_Log(VL_INFO, "CMD: %s", sb.Items);
+    VL_Log(VL_INFO, "CMD: %s", sb.items);
     sb_Free(sb);
     memset(&sb, 0, sizeof(sb));
 
@@ -1793,11 +1811,11 @@ static VL_Proc VL__CmdStartProcess(VL_cmd cmd, VL_Fd *fdin, VL_Fd *fdout, VL_Fd 
 
     Win32_CmdQuote(cmd, &sb);
     sb_AppendNull(&sb);
-    BOOL bSuccess = CreateProcessA(NULL, sb.Items, NULL, NULL, TRUE, 0, NULL, NULL, &siStartInfo, &piProcInfo);
+    BOOL bSuccess = CreateProcessA(NULL, sb.items, NULL, NULL, TRUE, 0, NULL, NULL, &siStartInfo, &piProcInfo);
     sb_Free(sb);
 
     if(!bSuccess) {
-        VL_Log(VL_ERROR, "Could not create child process for %s: %s", cmd.Items[0], Win32_ErrorMessage(GetLastError()));
+        VL_Log(VL_ERROR, "Could not create child process for %s: %s", cmd.items[0], Win32_ErrorMessage(GetLastError()));
         return VL_INVALID_PROC;
     }
 
@@ -1836,11 +1854,11 @@ static VL_Proc VL__CmdStartProcess(VL_cmd cmd, VL_Fd *fdin, VL_Fd *fdout, VL_Fd 
         // NOTE: This leaks a bit of memory in the child process.
         // But do we actually care? It's a one off leak anyway...
         VL_Cmd cmdNull = {0};
-        da_AppendMany(&cmdNull, cmd.Items, cmd.Count);
+        da_AppendMany(&cmdNull, cmd.items, cmd.count);
         cmd_Append(&cmdNull, NULL);
 
-        if(execvp(cmd.Items[0], (char * const*) cmdNull.Items) < 0) {
-            VL_Log(VL_ERROR, "Could not exec child process for %s: %s", cmd.Items[0], strerror(errno));
+        if(execvp(cmd.items[0], (char * const*) cmdNull.items) < 0) {
+            VL_Log(VL_ERROR, "Could not exec child process for %s: %s", cmd.items[0], strerror(errno));
             exit(1);
         }
         Assert(!"unreachable");
@@ -1868,7 +1886,7 @@ VLIBPROC void VL__GoRebuildUrself(int argc, char **argv, const char **src_paths,
     if(rebuild_is_needed < 0) exit(1);
     if(!rebuild_is_needed) return;
 
-    VL_cmd cmd = {0};
+    vl_cmd cmd = {0};
 
     const char *old_bin_path = temp_sprintf("%s.old", bin_path);
 

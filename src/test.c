@@ -1,7 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#if defined(_MSC_VER)
 #include "raddbg_markup.h"
+#endif
 
 #define VICLIB_IMPLEMENTATION
 #include "../viclib.h"
@@ -45,13 +47,13 @@ void TestViewStrs()
 
     view T9 = 
         VIEW("typedef struct {\n"
-             "    const char *Data;\n"
-             "    size_t Len;\n"
+             "    const char *items;\n"
+             "    size_t count;\n"
              "} view;\n"
              "#define VIEW(cstr_lit) view_FromParts((cstr_lit), sizeof(cstr_lit) - 1)\n"
              "#define VIEW_STATIC(cstr_lit) {(const char*)(cstr_lit), sizeof(cstr_lit) - 1}\n"
              "#define VIEW_FMT \"%.*s\"\n"
-             "#define VIEW_ARG(v) (int)(v).Len, (v).Data\n");
+             "#define VIEW_ARG(v) (int)(v).count, (v).items\n");
     view T10 = T9;
     printf("Splitting lines:\n"
            "source string: \""VIEW_FMT"\"\n", VIEW_ARG(T9));
@@ -66,7 +68,7 @@ void TestViewStrs()
     printf("\nSplitting by separators:\n");
     view delims = VIEW_STATIC(" {}*;#().,");
     view_IterateDelimiters(T11, delims, tokIdx, token, delim)
-        if((token.Len > 0 && !(token.Len == 1 && token.Data[0] == '\n')) || delim != ' ')
+        if((token.count > 0 && !(token.count == 1 && token.items[0] == '\n')) || delim != ' ')
             printf("token %d: \""VIEW_FMT"\"\tdelim found: '%c'\n", (int)tokIdx, VIEW_ARG(token), delim);
 }
 
@@ -129,9 +131,9 @@ void TestLoc()
     printf(LOC_FMT"\n", LOC_ARG(CURR_LOC));
 }
 
-bool IsSorted(int *Arr, int Len) {
-    for(int i = 0; i < Len - 1; i++) {
-        if(Arr[i] > Arr[i + 1]) {
+bool IsSorted(int *arr, int len) {
+    for(int i = 0; i < len - 1; i++) {
+        if(arr[i] > arr[i + 1]) {
             return false;
         }
     }
@@ -142,18 +144,18 @@ bool IsSorted(int *Arr, int Len) {
 void TestSort()
 {
     int TestSize = 1024;
-    int *Arr = (int*)malloc(TestSize*sizeof(int));
+    int *arr = (int*)malloc(TestSize*sizeof(int));
     srand((unsigned int)time(0));
 
     for(int i = 0; i < TestSize; i++)
     {
-        Arr[i] = rand();
+        arr[i] = rand();
     }
 
-    Sort(Arr, TestSize, sizeof(int), int_less_than);
-    for(int i = 0; i < TestSize; i++) printf("%d\t", Arr[i]);
+    Sort(arr, TestSize, sizeof(int), int_less_than);
+    for(int i = 0; i < TestSize; i++) printf("%d\t", arr[i]);
     printf("\n");
-    AssertMsg(IsSorted(Arr, TestSize), "Sort failed");
+    AssertMsg(IsSorted(arr, TestSize), "Sort failed");
 }
 
 void TestAll()

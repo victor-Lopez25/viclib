@@ -113,6 +113,19 @@ SOFTWARE.
 # define __PROC__ __FUNCTION__
 #endif
 
+#if defined(_UNISTD_H_) && defined(_SYS_STAT_H_)
+# define VL_FILE_LINUX
+#endif
+#if defined(_STDLIB_H_) || defined(_INC_STDLIB)
+# define VL_INC_STDLIB_H
+#endif
+#if defined(_STDIO_H_) || defined(_INC_STDIO)
+# define VL_INC_STDIO_H
+#endif
+#if defined(_STRING_H_) || defined(_INC_STRING)
+# define VL_INC_STRING_H
+#endif
+
 /* DebugBreakpoint for different platforms.
 Implementation by SDL3 (sdl wiki says SDL2 also had this but code says since SDL3.1.3) */
 #if defined(SDL_h_)
@@ -214,7 +227,7 @@ typedef uint8_t  bool;
 #  define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
         SDL_Log(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
         DebugBreakpoint; } }while(0)
-# elif defined(_INC_STDIO)
+# elif defined(VL_INC_STDIO_H)
 #  define AssertAlways(e) do{ if(!(e)){ \
         printf(__FILE__"("stringify(__LINE__)"): Assert fail: "#e "\n"); \
         fflush(stdout); DebugBreakpoint; } }while(0)
@@ -246,21 +259,21 @@ thread_local u32 ErrorNumber = 0;
 #endif
 
 /* bool found = false; 
- * LinearSearch(string_view_array, string_view, sv_Eq);
+ * LinearSearch(string_view_array, string_view, view_Eq);
  * if(found) {...}
  * 
- * string_view_array must have Count and Items attributes
+ * string_view_array must have count and items attributes
  */
 #define LinearSearch(arr, item, equal) \
-    for(size_t i = 0; i < (arr)->Count; i++) { \
-        if(equal((item), (arr)->Items[i])) { found = true; break; } \
+    for(size_t i = 0; i < (arr)->count; i++) { \
+        if(equal((item), (arr)->items[i])) { found = true; break; } \
     }
 
 ////////////////////////////////
 // intrinsics
 ////////////////////////////////
 
-#if defined(_INC_STRING)
+#if defined(VL_INC_STRING_H)
 # define mem_copy_non_overlapping(dst, src, len) memcpy(dst, src, len)
 # define mem_copy(dst, src, len) memmove(dst, src, len)
 # define mem_zero(data, len) memset(data, 0, len)
@@ -281,8 +294,8 @@ VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count);
 ////////////////////////////////
 
 typedef struct {
-    const char *Data;
-    size_t Len;
+    const char *items;
+    size_t count;
 } view;
 #define VIEW(cstr_lit) view_FromParts((cstr_lit), sizeof(cstr_lit) - 1)
 #if defined(__cplusplus)
@@ -291,7 +304,7 @@ typedef struct {
 #define VIEW_STATIC(cstr_lit) (view){(const char*)(cstr_lit), sizeof(cstr_lit) - 1}
 #endif
 #define VIEW_FMT "%.*s"
-#define VIEW_ARG(v) (int)(v).Len, (v).Data
+#define VIEW_ARG(v) (int)(v).count, (v).items
 
 #ifndef VIEWPROC
 # define VIEWPROC VLIBPROC
@@ -302,19 +315,19 @@ size_t strlen(const char *s);
 #endif // strlen
 
 int is_space(int _c); // only checks ascii space characters
-VIEWPROC view view_FromParts(const char *Data, size_t Count);
-VIEWPROC view view_FromCstr(const char *Cstr);
-VIEWPROC view view_Slice(view A, size_t start, size_t end); // won't include end -> [start, end)
-VIEWPROC int  view_Compare(view A, view B); // result = A - B
-VIEWPROC bool view_Eq(view A, view B);
-VIEWPROC bool view_StartsWith(view v, view Start);
-VIEWPROC const char *view_Contains(view Haystack, view Needle); // result = pointer to where the needle is in haystack or null
+VIEWPROC view view_FromParts(const char *data, size_t count);
+VIEWPROC view view_FromCstr(const char *cstr);
+VIEWPROC view view_Slice(view v, size_t start, size_t end); // won't include end -> [start, end)
+VIEWPROC int  view_Compare(view a, view b); // result = A - B
+VIEWPROC bool view_Eq(view a, view b);
+VIEWPROC bool view_StartsWith(view v, view start);
+VIEWPROC const char *view_Contains(view haystack, view needle); // result = pointer to where the needle is in haystack or null
 VIEWPROC bool view_ContainsCharacter(view v, char c);
 #define view_EndWith view_EndsWith /* in case of singular/plural annoyance */
-VIEWPROC bool view_EndsWith(view v, view End);
-VIEWPROC view view_ChopByDelim(view *v, char Delim);
-VIEWPROC view view_ChopByAnyDelim(view *v, view Delims, char *Delimiter); // checks for any character in Delims, stores found delimiter in Delimiter
-VIEWPROC view view_ChopByView(view *v, view Delim); // full view is the delim
+VIEWPROC bool view_EndsWith(view v, view end);
+VIEWPROC view view_ChopByDelim(view *v, char delim);
+VIEWPROC view view_ChopByAnyDelim(view *v, view delims, char *delimiter); // checks for any character in Delims, stores found delimiter in Delimiter
+VIEWPROC view view_ChopByView(view *v, view delim); // full view is the delim
 VIEWPROC view view_ChopLeft(view *v, size_t n);
 VIEWPROC view view_ChopRight(view *v, size_t n);
 VIEWPROC view view_TrimLeft(view v);
@@ -323,30 +336,31 @@ VIEWPROC view view_Trim(view v);
 
 #define view_IterateLines(src, idxName, lineName) \
     view lineName = view_ChopByDelim(&src, '\n'); \
-    for(size_t idxName = 0; src.Len > 0 || lineName.Len > 0; lineName = view_ChopByDelim(&src, '\n'), idxName++)
+    for(size_t idxName = 0; src.count > 0 || lineName.count > 0; lineName = view_ChopByDelim(&src, '\n'), idxName++)
 
 #define view_IterateSpaces(src, idxName, wordName) \
     view wordName = view_ChopByAnyDelim(&src, VIEW_STATIC(" \n\t\v\f\r"), 0); \
-    for(size_t idxName = 0; src.Len > 0 || wordName.Len > 0; wordName = view_ChopByAnyDelim(&src, VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
-        if(word.Len > 0)
+    for(size_t idxName = 0; src.count > 0 || wordName.count > 0; wordName = view_ChopByAnyDelim(&src, VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
+        if(word.count > 0)
 
 #define view_IterateDelimiters(src, delims, idxName, tokName, delimName) \
     char delimName; \
     view tokName = view_ChopByAnyDelim(&src, delims, &delimName); \
-    for(size_t idxName = 0; src.Len > 0 || tokName.Len > 0 || delimName != '\0'; \
+    for(size_t idxName = 0; src.count > 0 || tokName.count > 0 || delimName != '\0'; \
         tokName = view_ChopByAnyDelim(&src, delims, &delimName), idxName++)
 
 #define PARSE_FAIL 0
 #define PARSE_NO_DECIMALS 1 // for when you might want integer precision
 #define PARSE_OK 2
-VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining);
-VIEWPROC int view_ParseF64(view v, f64 *Result, view *Remaining);
+VIEWPROC bool view_ParseS64(view v, s64 *result, view *remaining);
+// TODO: Better exp parsing
+VIEWPROC int view_ParseF64(view v, f64 *result, view *remaining);
 
 typedef struct {
-    view File;
-    s32 Line;
-    s32 Column;
-    view Proc;
+    view file;
+    s32 line;
+    s32 column;
+    view proc;
 } code_location;
 #define CURR_LOC \
 (code_location){VIEW_STATIC(__FILE__), __LINE__, __COLUMN__, VIEW_STATIC(__PROC__)}
@@ -356,7 +370,7 @@ typedef struct {
 #define LOC_MSVC_STR __FILE__"("stringify(__LINE__)")"
 #define LOC_STR __FILE__"("stringify(__LINE__)":"stringify(__COLUMN__)")"
 #define LOC_FMT VIEW_FMT"(%d:%d)"
-#define LOC_ARG(loc) VIEW_ARG((loc).File), (loc).Line, (loc.Column)
+#define LOC_ARG(loc) VIEW_ARG((loc).file), (loc).line, (loc.column)
 
 ////////////////////////////////
 
@@ -472,10 +486,6 @@ RESTORE_WARNINGS
 #define READ_ENTIRE_FILE_MAX 0xFFFFFFFF
 #endif
 
-#if defined(_UNISTD_H_) && defined(_SYS_STAT_H_)
-# define VL_FILE_LINUX
-#endif
-
 #if defined(_APISETFILE_) || defined(VL_FILE_LINUX)
 typedef enum {
     VL_FILE_INVALID = -1,
@@ -484,25 +494,36 @@ typedef enum {
     VL_FILE_SYMLINK,
     VL_FILE_OTHER,
 } file_type;
-bool GetLastWriteTime(const char *file, u64 *WriteTime);
-VLIBPROC file_type GetFileType(const char *path);
+VLIBPROC bool GetLastWriteTime(const char *file, u64 *WriteTime);
+VLIBPROC file_type VL_GetFileType(const char *path);
 #else
 #define GetLastWriteTime(file, writeTime) \
 AssertMsgAlways(false, "To use GetLastWriteTime you must:\n" \
     " - include windows.h or fileapi.h (windows api)\n" \
     " - inlcude sys/stat.h (linux)")
-#define GetFileType(file) \
+#define VL_GetFileType(file) \
 AssertMsgAlways(false, "To use GetLastWriteTime you must:\n" \
     " - include windows.h or fileapi.h (windows api)\n" \
     " - inlcude sys/stat.h (linux)")
 #endif
 
-#if defined(_APISETFILE_) || defined(_INC_STDIO) || defined(VL_FILE_LINUX)
+#define VL_NANOS_PER_SEC 1000000000
+#if defined(_PROFILEAPI_H_) || (OS_LINUX && defined(_LINUX_TIME_H))
+// Gets nanoseconds since first time this was called
+VLIBPROC u64 VL_GetNanos(void);
+#else
+#define VL_GetNanos() \
+AssertMsgAlways(false, "To use VL_GetNanos you must:\n" \
+    " - include windows.h or profileapi.h (windows api)\n" \
+    " - include time.h (linux api)")
+#endif
+
+#if defined(_APISETFILE_) || defined(VL_INC_STDIO_H) || defined(VL_FILE_LINUX)
 
 typedef struct {
 #if defined(_APISETFILE_)
     HANDLE File;
-#elif defined(_INC_STDIO)
+#elif defined(VL_INC_STDIO_H)
     FILE *File;
 #elif defined(VL_FILE_LINUX)
     int fd;
@@ -517,8 +538,8 @@ typedef struct {
 VLIBPROC bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
 VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size);
 
-#if (defined(_APISETFILE_) && defined(_MEMORYAPI_H_)) || (defined(_INC_STDIO) && defined(malloc)) || (defined(VL_FILE_LINUX) && defined(mmap))
-char *ReadEntireFile(const char *File, size_t *Size);
+#if (defined(_APISETFILE_) && defined(_MEMORYAPI_H_)) || (defined(VL_INC_STDIO_H) && defined(VL_INC_STDLIB_H)) || (defined(VL_FILE_LINUX) && defined(_SYS_MMAN_H))
+char *ReadEntireFile(char *File, size_t *Size);
 #endif
 
 #else
@@ -574,191 +595,191 @@ size_t strlen(const char *s)
 }
 #endif // strlen
 
-VIEWPROC view view_FromParts(const char *Data, size_t Count)
+VIEWPROC view view_FromParts(const char *data, size_t count)
 {
     view v;
-    v.Data = Data;
-    v.Len = Count;
+    v.items = data;
+    v.count = count;
     return v;
 }
 
-VIEWPROC view view_FromCstr(const char *Cstr)
+VIEWPROC view view_FromCstr(const char *cstr)
 {
     view v;
-    v.Data = Cstr;
-    v.Len = strlen(Cstr);
+    v.items = cstr;
+    v.count = strlen(cstr);
     return v;
 }
 
-VIEWPROC view view_Slice(view A, size_t Start, size_t End)
+VIEWPROC view view_Slice(view a, size_t start, size_t end)
 {
-    AssertMsg(Start <= End, "Start must be smaller or equal to End");
-    return view_FromParts(A.Data + Start, End - Start);
+    AssertMsg(start <= end, "Start must be smaller or equal to End");
+    return view_FromParts(a.items + start, end - start);
 }
 
 VIEWPROC view view_TrimLeft(view v)
 {
     size_t i = 0;
-    for(;i < v.Len && is_space(v.Data[i]);) i += 1;
+    for(;i < v.count && is_space(v.items[i]);) i += 1;
 
-    return view_FromParts((const char*)(v.Data + i), v.Len - i);
+    return view_FromParts((const char*)(v.items + i), v.count - i);
 }
 VIEWPROC view view_TrimRight(view v)
 {
     size_t i = 0;
-    for(;i < v.Len && is_space(v.Data[v.Len - 1 - i]);) i += 1;
+    for(;i < v.count && is_space(v.items[v.count - 1 - i]);) i += 1;
 
-    return view_FromParts((const char*)v.Data, v.Len - i);
+    return view_FromParts((const char*)v.items, v.count - i);
 }
 VIEWPROC view view_Trim(view v)
 {
     return view_TrimRight(view_TrimLeft(v));
 }
 
-VIEWPROC int view_Compare(view A, view B)
+VIEWPROC int view_Compare(view a, view b)
 {
     char res = 0;
-    for(size_t i = 0; i < min(A.Len, B.Len); i++)
+    for(size_t i = 0; i < min(a.count, b.count); i++)
     {
-        res = A.Data[i] - B.Data[i];
+        res = a.items[i] - b.items[i];
         if(res != 0) return res;
     }
-    return (int)A.Len - (int)B.Len;
+    return (int)a.count - (int)b.count;
 }
 
-VIEWPROC bool view_Eq(view A, view B)
+VIEWPROC bool view_Eq(view a, view b)
 {
-    if(A.Len != B.Len) return false;
-    else return mem_compare(A.Data, B.Data, A.Len) == 0;
+    if(a.count != b.count) return false;
+    else return mem_compare(a.items, b.items, a.count) == 0;
 }
 
-VIEWPROC bool view_StartsWith(view v, view Start)
+VIEWPROC bool view_StartsWith(view v, view start)
 {
-    if(Start.Len > v.Len) return false;
-    else return view_Eq(view_FromParts(v.Data, Start.Len), Start);
+    if(start.count > v.count) return false;
+    else return view_Eq(view_FromParts(v.items, start.count), start);
 }
 
-VIEWPROC const char *view_Contains(view Haystack, view Needle)
+VIEWPROC const char *view_Contains(view haystack, view needle)
 {
-    if(Needle.Len > Haystack.Len) return 0;
-    else if(Needle.Len == Haystack.Len) {
-        return mem_compare(Haystack.Data, Needle.Data, Haystack.Len) == 0 ?
-            Haystack.Data : 0;
+    if(needle.count > haystack.count) return 0;
+    else if(needle.count == haystack.count) {
+        return mem_compare(haystack.items, needle.items, haystack.count) == 0 ?
+            haystack.items : 0;
     }
     
     // TODO: IMPORTANT: Do this with a string-search algorithm which requires memory, but is O(n+m)
     // NOTE: I can probably still do this O(n^2) when working with a small haystack (~5000 characters or less?)
     // NOTE: wiki: https://en.wikipedia.org/wiki/Two-way_string-matching_algorithm
-    for(size_t i = 0; i < Haystack.Len - Needle.Len; i++)
+    for(size_t i = 0; i < haystack.count - needle.count; i++)
     {
-        if(mem_compare(Haystack.Data + i, Needle.Data, Needle.Len) == 0) return Haystack.Data + i;
+        if(mem_compare(haystack.items + i, needle.items, needle.count) == 0) return haystack.items + i;
     }
     return 0;
 }
 
 VIEWPROC bool view_ContainsCharacter(view v, char c)
 {
-    for(size_t i = 0; i < v.Len; i++) {
-        if(v.Data[i] == c) return true;
+    for(size_t i = 0; i < v.count; i++) {
+        if(v.items[i] == c) return true;
     }
     return false;
 }
 
-VIEWPROC bool view_EndsWith(view v, view End)
+VIEWPROC bool view_EndsWith(view v, view end)
 {
-    if(End.Len > v.Len) return false;
-    else return view_Eq(view_FromParts(v.Data + v.Len - End.Len, End.Len), End);
+    if(end.count > v.count) return false;
+    else return view_Eq(view_FromParts(v.items + v.count - end.count, end.count), end);
 }
 
-VIEWPROC view view_ChopByDelim(view *v, char Delim)
+VIEWPROC view view_ChopByDelim(view *v, char delim)
 {
     size_t i = 0;
-    for(;i < v->Len && v->Data[i] != Delim;) i += 1;
+    for(;i < v->count && v->items[i] != delim;) i += 1;
 
-    view Result = view_FromParts((const char*)v->Data, i);
+    view Result = view_FromParts((const char*)v->items, i);
 
-    if(i < v->Len) {
-        v->Len -= i + 1;
-        v->Data += i + 1;
+    if(i < v->count) {
+        v->count -= i + 1;
+        v->items += i + 1;
     }
     else {
-        v->Len -= i;
-        v->Data += i;
+        v->count -= i;
+        v->items += i;
     }
 
     return Result;
 }
 
-VIEWPROC view view_ChopByAnyDelim(view *v, view Delims, char *Delimiter)
+VIEWPROC view view_ChopByAnyDelim(view *v, view delims, char *delimiter)
 {
     view Result;
-    if(Delimiter) *Delimiter = 0;
+    if(delimiter) *delimiter = 0;
 
     size_t i = 0;
-    for(; i < v->Len; i++) {
-        for(size_t j = 0; j < Delims.Len; j++)
-            if(Delims.Data[j] == v->Data[i]) {
-                if(Delimiter) *Delimiter = v->Data[i];
+    for(; i < v->count; i++) {
+        for(size_t j = 0; j < delims.count; j++)
+            if(delims.items[j] == v->items[i]) {
+                if(delimiter) *delimiter = v->items[i];
                 goto done;
             }
     }
 
 done:
-    Result = view_FromParts((const char*)v->Data, i);
+    Result = view_FromParts((const char*)v->items, i);
 
-    if(i < v->Len) {
-        v->Len -= i + 1;
-        v->Data += i + 1;
+    if(i < v->count) {
+        v->count -= i + 1;
+        v->items += i + 1;
     }
     else {
-        v->Len -= i;
-        v->Data += i;
+        v->count -= i;
+        v->items += i;
     }
 
     return Result;
 }
 
-VIEWPROC view view_ChopByView(view *v, view Delim)
+VIEWPROC view view_ChopByView(view *v, view delim)
 {
-    view Window = view_FromParts((const char*)v->Data, Delim.Len);
+    view Window = view_FromParts((const char*)v->items, delim.count);
     size_t i = 0;
-    for(;i + Delim.Len < v->Len && !view_Eq(Window, Delim);)
+    for(;i + delim.count < v->count && !view_Eq(Window, delim);)
     {
         i++;
-        Window.Data++;
+        Window.items++;
     }
 
-    view Result = view_FromParts((const char*)v->Data, i);
+    view Result = view_FromParts((const char*)v->items, i);
 
-    if(i + Delim.Len == v->Len) {
-        // include last <Delim.Len> characters if they aren't
-        //  equal to Delim
-        Result.Len += Delim.Len;
+    if(i + delim.count == v->count) {
+        // include last <delim.count> characters if they aren't
+        //  equal to delim
+        Result.count += delim.count;
     }
 
-    v->Data += i + Delim.Len;
-    v->Len -= i + Delim.Len;
+    v->items += i + delim.count;
+    v->count -= i + delim.count;
 
     return Result;
 }
 
 VIEWPROC view view_ChopLeft(view *v, size_t n)
 {
-    if(n > v->Len) n = v->Len;
+    if(n > v->count) n = v->count;
 
-    view Result = view_FromParts((const char*)v->Data, n);
-    v->Data += n;
-    v->Len -= n;
+    view Result = view_FromParts((const char*)v->items, n);
+    v->items += n;
+    v->count -= n;
 
     return Result;
 }
 
 VIEWPROC view view_ChopRight(view *v, size_t n)
 {
-    if(n > v->Len) n = v->Len;
+    if(n > v->count) n = v->count;
 
-    view Result = view_FromParts((const char*)(v->Data + v->Len - n), n);
-    v->Len -= n;
+    view Result = view_FromParts((const char*)(v->items + v->count - n), n);
+    v->count -= n;
 
     return Result;
 }
@@ -782,53 +803,53 @@ int _digit_val(int c)
 // try to compile: int n = 080;
 // I checked out how Odin did octal and they do "0o" prefix, seemed more logical.
 // I also don't know what the "0z" prefix of base 12 is for but I'll just leave it there
-VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
+VIEWPROC bool view_ParseS64(view v, s64 *result, view *remaining)
 {
-    AssertMsg(Result != 0, "Result parameter must be a valid pointer");
+    AssertMsg(result != 0, "Result parameter must be a valid pointer");
     v = view_TrimLeft(v);
-    if(v.Len == 0) return false;
+    if(v.count == 0) return false;
 
     bool Neg = false;
-    if(v.Len > 1) {
-        if(v.Data[0] == '-') {
+    if(v.count > 1) {
+        if(v.items[0] == '-') {
             Neg = true;
-            v.Data++;
-            v.Len--;
+            v.items++;
+            v.count--;
         }
-        else if(v.Data[0] == '+') {
-            v.Data++;
-            v.Len--;
+        else if(v.items[0] == '+') {
+            v.items++;
+            v.count--;
         }
     }
 
     int Base = 10;
     // try to parse a prefix
-    if(v.Len > 2 && v.Data[0] == '0') {
-        if(v.Data[1] == 'b' || v.Data[1] == 'B') {
-            Base = 2; v.Data += 2; v.Len -= 2;
+    if(v.count > 2 && v.items[0] == '0') {
+        if(v.items[1] == 'b' || v.items[1] == 'B') {
+            Base = 2; v.items += 2; v.count -= 2;
         }
-        else if(v.Data[1] == 'o') {
-            Base = 8; v.Data += 2; v.Len -= 2;
+        else if(v.items[1] == 'o') {
+            Base = 8; v.items += 2; v.count -= 2;
         }
-        else if(v.Data[1] == 'd') {
-            Base = 10; v.Data += 2; v.Len -= 2;
+        else if(v.items[1] == 'd') {
+            Base = 10; v.items += 2; v.count -= 2;
         }
-        else if(v.Data[1] == 'z') {
-            Base = 12; v.Data += 2; v.Len -= 2;
+        else if(v.items[1] == 'z') {
+            Base = 12; v.items += 2; v.count -= 2;
         }
-        else if(v.Data[1] == 'x' || v.Data[1] == 'X') {
-            Base = 16; v.Data += 2; v.Len -= 2;
+        else if(v.items[1] == 'x' || v.items[1] == 'X') {
+            Base = 16; v.items += 2; v.count -= 2;
         }
     }
 
-    int Digit = _digit_val((int)v.Data[0]);
+    int Digit = _digit_val((int)v.items[0]);
     if(Digit >= Base) return false;
 
     s64 Value = 0;
     int j = 0;
-    for(; j < (int)v.Len; j++)
+    for(; j < (int)v.count; j++)
     {
-        char c = v.Data[j];
+        char c = v.items[j];
         if(c != '_') {
             Digit = _digit_val((int)c);
             if(Digit >= Base) {
@@ -841,42 +862,42 @@ VIEWPROC bool view_ParseS64(view v, s64 *Result, view *Remaining)
     }
 
     if(Neg) Value = -Value;
-    *Result = Value;
-    if(Remaining) {
-        Remaining->Data = v.Data + (size_t)j;
-        Remaining->Len = v.Len - (size_t)j;
+    *result = Value;
+    if(remaining) {
+        remaining->items = v.items + (size_t)j;
+        remaining->count = v.count - (size_t)j;
     }
 
     return true;
 }
 
-int view_ParseF64(view v, f64 *Result, view *Remaining)
+int view_ParseF64(view v, f64 *result, view *remaining)
 {
-    AssertMsg(Result != 0, "Result parameter must be a valid pointer");
+    AssertMsg(result != 0, "Result parameter must be a valid pointer");
     v = view_TrimLeft(v);
-    if(v.Len == 0) return PARSE_FAIL;
+    if(v.count == 0) return PARSE_FAIL;
     bool DecimalPart = false;
 
     bool Neg = false;
-    if(v.Len > 1) {
-        if(v.Data[0] == '-') {
+    if(v.count > 1) {
+        if(v.items[0] == '-') {
             Neg = true;
-            v.Data++;
-            v.Len--;
+            v.items++;
+            v.count--;
         }
-        else if(v.Data[0] == '+') {
-            v.Data++;
-            v.Len--;
+        else if(v.items[0] == '+') {
+            v.items++;
+            v.count--;
         }
     }
 
-    if(v.Len > 1 && v.Data[0] == '.') {
+    if(v.count > 1 && v.items[0] == '.') {
         DecimalPart = true;
-        v.Data++;
-        v.Len--;
+        v.items++;
+        v.count--;
     }
 
-    if(*v.Data > '9' || *v.Data < '0') return PARSE_FAIL;
+    if(*v.items > '9' || *v.items < '0') return PARSE_FAIL;
 
     double Val = 0.0;
     double Multiplier = 1.0;
@@ -884,54 +905,54 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
     bool FoundExponent = false;
     view ExponentStr;
     size_t j = 0;
-    for(; j < v.Len; j++)
+    for(; j < v.count; j++)
     {
-        char c = v.Data[j];
+        char c = v.items[j];
         if(c == '.') {
             DecimalPart = true;
-            if(j+1 < v.Len && (v.Data[j+1] > '9' || v.Data[j+1] < '0')) {
+            if(j+1 < v.count && (v.items[j+1] > '9' || v.items[j+1] < '0')) {
                 break;
             }
         }
         else if(c == 'e' || c == 'E') {
             // Try to parse exponent
             // Not sure how I feel about this, there probably is a better way to do this
-            ExponentStr = view_FromParts(v.Data + j + 1, v.Len - j - 1);
+            ExponentStr = view_FromParts(v.items + j + 1, v.count - j - 1);
 
             bool Prefixed = false;
             bool ExpNeg = false;
-            if(ExponentStr.Len > 1) {
-                if(ExponentStr.Data[0] == '-') {
+            if(ExponentStr.count > 1) {
+                if(ExponentStr.items[0] == '-') {
                     Prefixed = true;
                     ExpNeg = true;
-                    ExponentStr.Data++;
-                    ExponentStr.Len--;
+                    ExponentStr.items++;
+                    ExponentStr.count--;
                 }
-                else if(ExponentStr.Data[0] == '+') {
+                else if(ExponentStr.items[0] == '+') {
                     Prefixed = true;
-                    ExponentStr.Data++;
-                    ExponentStr.Len--;
+                    ExponentStr.items++;
+                    ExponentStr.count--;
                 }
             }
 
-            if(ExponentStr.Len < 1) break;
-            if(*ExponentStr.Data > '9' || *ExponentStr.Data < '0') break;
+            if(ExponentStr.count < 1) break;
+            if(*ExponentStr.items > '9' || *ExponentStr.items < '0') break;
             
             FoundExponent = true;
             size_t ExpEnd = 0;
-            for(; ExpEnd < ExponentStr.Len; ExpEnd++)
+            for(; ExpEnd < ExponentStr.count; ExpEnd++)
             {
-                if(ExponentStr.Data[ExpEnd] > '9' || ExponentStr.Data[ExpEnd] < '0') break;
+                if(ExponentStr.items[ExpEnd] > '9' || ExponentStr.items[ExpEnd] < '0') break;
             }
 
             double ExpMultiplier = 10.0;
-            int charVal = ExponentStr.Data[ExpEnd - 1] - '0';
+            int charVal = ExponentStr.items[ExpEnd - 1] - '0';
             if(ExpNeg) {
                 for(int k = 0; k < charVal; k++) Val /= ExpMultiplier;
                 ExpMultiplier = 10000000000.0;
                 for(s64 k = (s64)ExpEnd - 2; k >= 0; k--)
                 {
-                    charVal = ExponentStr.Data[k] - '0';
+                    charVal = ExponentStr.items[k] - '0';
                     for(int l = 0; l < charVal; l++) Val /= ExpMultiplier;
                     ExpMultiplier *= 10000000000.0;
                 }
@@ -940,7 +961,7 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
                 ExpMultiplier = 10000000000.0;
                 for(s64 k = (s64)ExpEnd - 2; k >= 0; k--)
                 {
-                    charVal = ExponentStr.Data[k] - '0';
+                    charVal = ExponentStr.items[k] - '0';
                     for(int l = 0; l < charVal; l++) Val *= ExpMultiplier;
                     ExpMultiplier *= 10000000000.0;
                 }
@@ -955,26 +976,26 @@ int view_ParseF64(view v, f64 *Result, view *Remaining)
         }
         else if(DecimalPart) {
             Multiplier *= 0.1;
-            Val += (v.Data[j] - '0')*Multiplier;
+            Val += (v.items[j] - '0')*Multiplier;
         }
         else {
             Val *= 10.0;
-            Val += v.Data[j] - '0';
+            Val += v.items[j] - '0';
         }
     }
 
     if(Neg) Val = -Val;
-    *Result = Val;
-    if(Remaining) {
-        Remaining->Data = v.Data + j;
-        Remaining->Len = v.Len - j;
+    *result = Val;
+    if(remaining) {
+        remaining->items = v.items + j;
+        remaining->count = v.count - j;
     }
     return (DecimalPart || FoundExponent) ? PARSE_OK : PARSE_NO_DECIMALS;
 }
 
 ////////////////////////////////
 
-#if !defined(_INC_STRING)
+#if !defined(VL_INC_STRING_H)
 #define VCL_ALIGN (sizeof(size_t)-1)
 VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len)
 {
@@ -1074,7 +1095,7 @@ VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
     }
     return 0;
 }
-#endif // !defined(_INC_STRING)
+#endif // !defined(VL_INC_STRING_H)
 
 ////////////////////////////////
 
@@ -1210,7 +1231,7 @@ ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem)
 ////////////////////////////////
 
 #if defined(_APISETFILE_) // windows fileapi.h included
-bool GetLastWriteTime(const char *file, u64 *WriteTime)
+VLIBPROC bool GetLastWriteTime(const char *file, u64 *WriteTime)
 {
     bool ok = false;
     WIN32_FILE_ATTRIBUTE_DATA data;
@@ -1222,8 +1243,17 @@ bool GetLastWriteTime(const char *file, u64 *WriteTime)
     }
     return ok;
 }
+
+VLIBPROC file_type VL_GetFileType(const char *path)
+{
+    DWORD attr = GetFileAttributesA(path);
+    if(attr == INVALID_FILE_ATTRIBUTES) return VL_FILE_INVALID;
+    if(attr & FILE_ATTRIBUTE_DIRECTORY) return VL_FILE_DIRECTORY;
+    // TODO: detect symlinks on Windows (whatever that means on Windows anyway)
+    return VL_FILE_REGULAR;
+}
 #elif defined(_SYS_STAT_H_)
-bool GetLastWriteTime(const char *file, uint64_t *WriteTime)
+VLIBPROC bool GetLastWriteTime(const char *file, uint64_t *WriteTime)
 {
     struct stat attr;
     bool ok = false;
@@ -1233,6 +1263,56 @@ bool GetLastWriteTime(const char *file, uint64_t *WriteTime)
     }
     return ok;
 }
+
+VLIBPROC file_type VL_GetFileType(const char *path)
+{
+    struct stat statbuf;
+    if(lstat(path, &statbuf) < 0) return VL_FILE_INVALID;
+    if(S_ISREG(statbuf.st_mode)) return VL_FILE_REGULAR;
+    if(S_ISDIR(statbuf.st_mode)) return VL_FILE_DIRECTORY;
+    if(S_ISLNK(statbuf.st_mode)) return VL_FILE_SYMLINK;
+    return VL_FILE_OTHER;
+}
+#endif
+
+#if defined(_PROFILEAPI_H_)
+VLIBPROC u64 VL_GetNanos(void)
+{
+    static bool initted = false;
+    static LARGE_INTEGER frequency = {0};
+    static u64 initTime;
+    if(!initted) {
+        QueryPerformanceFrequency(&frequency);
+
+        LARGE_INTEGER time;
+        QueryPerformanceCounter(&time);
+        u64 secs = time.QuadPart / frequency.QuadPart;
+        u64 nanos = (time.QuadPart % frequency.QuadPart) * VL_NANOS_PER_SEC / frequency.QuadPart;
+        initTime = VL_NANOS_PER_SEC * secs + nanos;
+        initted = true;
+    }
+
+    LARGE_INTEGER time;
+    QueryPerformanceCounter(&time);
+    u64 secs = time.QuadPart / frequency.QuadPart;
+    u64 nanos = (time.QuadPart % frequency.QuadPart) * VL_NANOS_PER_SEC / frequency.QuadPart;
+    return (VL_NANOS_PER_SEC * secs + nanos) - initTime;
+}
+#elif OS_LINUX && defined(_LINUX_TIME_H)
+VLIBPROC u64 VL_GetNanos(void)
+{
+    static bool initted = false;
+    static u64 initTime;
+    if(!initted) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        initTime = VL_NANOS_PER_SEC * ts.tv_sec + ts.tv_nsec;
+    }
+
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (VL_NANOS_PER_SEC * ts.tv_sec + ts.tv_nsec) - initTime;
+}
 #endif
 
 #if !defined(VICLIB_NO_FILE_IO)
@@ -1240,7 +1320,7 @@ bool GetLastWriteTime(const char *file, uint64_t *WriteTime)
 
 #if defined(_MEMORYAPI_H_)
 PUSH_IGNORE_UNINITIALIZED
-char *ReadEntireFile(const char *File, size_t *Size)
+char *ReadEntireFile(char *File, size_t *Size)
 {
     ErrorNumber = 0;
     AssertMsg(Size != 0, "Size parameter must be a valid pointer");
@@ -1384,18 +1464,9 @@ defer:
     return result;
 }
 
-VLIBPROC file_type VL_GetFileType(const char *path)
-{
-    DWORD attr = GetFileAttributesA(path);
-    if(attr == INVALID_FILE_ATTRIBUTES) return VL_FILE_INVALID;
-    if(attr & FILE_ATTRIBUTE_DIRECTORY) return VL_FILE_DIRECTORY;
-    // TODO: detect symlinks on Windows (whatever that means on Windows anyway)
-    return VL_FILE_REGULAR;
-}
-
 #elif defined(VL_FILE_LINUX)
 
-#if defined(mmap)
+#if defined(_SYS_MMAN_H)
 char *ReadEntireFile(char *File, size_t *Size)
 {
     ErrorNumber = 0;
@@ -1437,7 +1508,7 @@ char *ReadEntireFile(char *File, size_t *Size)
 
     return Result;
 }
-#endif // defined(mmap)
+#endif // defined(_SYS_MMAN_H)
 
 bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
 {
@@ -1487,19 +1558,9 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
 
 // TODO: WriteEntire file for linux
 
-VLIBPROC file_type GetFileType(const char *path)
-{
-    struct stat statbuf;
-    if(lstat(path, &statbuf) < 0) return VL_FILE_INVALID;
-    if(S_ISREG(statbuf.st_mode)) return VL_FILE_REGULAR;
-    if(S_ISDIR(statbuf.st_mode)) return VL_FILE_DIRECTORY;
-    if(S_ISLNK(statbuf.st_mode)) return VL_FILE_SYMLINK;
-    return VL_FILE_OTHER;
-}
+#elif defined(VL_INC_STDIO_H)
 
-#elif defined(_INC_STDIO)
-
-#if defined(malloc)
+#if defined(VL_INC_STDLIB_H)
 PUSH_IGNORE_UNINITIALIZED
 char *ReadEntireFile(char *File, size_t *Size)
 {
@@ -1511,6 +1572,7 @@ char *ReadEntireFile(char *File, size_t *Size)
     // ERROR_READ_FILE_TOO_BIG - READ_ENTIRE_FILE_MAX exceeded
     FILE *f = fopen(File, "rb");
     bool ok = f != 0;
+    char *result = 0;
     if(!ok) ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
 
     if(ok) {
@@ -1530,8 +1592,8 @@ char *ReadEntireFile(char *File, size_t *Size)
     }
 
     if(ok) {
-        Result = malloc(sizeof(char) * m);
-        ok = Result != 0;
+        result = malloc(sizeof(char) * m);
+        ok = result != 0;
         if(!ok) ErrorNumber = ERROR_READ_NO_MEM;
     }
 
@@ -1541,7 +1603,7 @@ char *ReadEntireFile(char *File, size_t *Size)
     }
 
     if(ok) {
-        size_t n = fread(Result, 1, m, f);
+        size_t n = fread(result, 1, m, f);
         ok = n == (size_t)m;
         if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
     }
@@ -1554,15 +1616,15 @@ char *ReadEntireFile(char *File, size_t *Size)
     if(Size) *Size = m;
 
     if(f) fclose(f);
-    if(!ok && Result) {
-        free(Result);
-        Result = 0;
+    if(!ok && result) {
+        free(result);
+        result = 0;
     }
 
-    return Result;
+    return result;
 }
 RESTORE_WARNINGS
-#endif // defined(malloc)
+#endif // defined(VL_INC_STDLIB_H)
 
 bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
 {
