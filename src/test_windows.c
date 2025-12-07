@@ -1,4 +1,3 @@
-#include <windows.h>
 #include <stdio.h>
 
 #define VICLIB_IMPLEMENTATION
