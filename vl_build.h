@@ -42,6 +42,9 @@ typedef int vl_fd;
 # define VL_INVALID_FD (-1)
 #endif
 
+#define VL_INC_STDIO_H
+#define VL_INC_STDLIB_H
+#define VL_INC_STRING_H
 #include VICLIB_PATH
 
 #define VL_REALLOC realloc

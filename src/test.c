@@ -46,11 +46,11 @@ void TestViewStrs()
     printf("To slice: \""VIEW_FMT"\"\tSliced (2, 4): \""VIEW_FMT"\"\n", VIEW_ARG(T6), VIEW_ARG(T8));
 
     view T9 = 
-        VIEW("typedef struct {\n"
-             "    const char *items;\n"
+        VIEW("typedef struct {\r\n"
+             "    const char *items;\r\n"
              "    size_t count;\n"
              "} view;\n"
-             "#define VIEW(cstr_lit) view_FromParts((cstr_lit), sizeof(cstr_lit) - 1)\n"
+             "#define VIEW(cstr_lit) view_FromParts((cstr_lit), sizeof(cstr_lit) - 1)\r\n"
              "#define VIEW_STATIC(cstr_lit) {(const char*)(cstr_lit), sizeof(cstr_lit) - 1}\n"
              "#define VIEW_FMT \"%.*s\"\n"
              "#define VIEW_ARG(v) (int)(v).count, (v).items\n");
@@ -58,7 +58,7 @@ void TestViewStrs()
     printf("Splitting lines:\n"
            "source string: \""VIEW_FMT"\"\n", VIEW_ARG(T9));
 
-    view_IterateLines(&T9, lineIdx, line) printf("line %d: "VIEW_FMT"\n", (int)lineIdx, VIEW_ARG(line));
+    view_IterateLines(&T9, lineIdx, line) printf("line %d: \'"VIEW_FMT"\'\n", (int)lineIdx, VIEW_ARG(line));
 
     view T11 = T10;
     printf("Splitting spaces:\n");

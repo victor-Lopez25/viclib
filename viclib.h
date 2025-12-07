@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.5.2
+--version: 1.5.3
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -117,15 +117,33 @@ SOFTWARE.
 #if defined(_UNISTD_H_) && defined(_SYS_STAT_H_)
 # define VL_FILE_LINUX
 #endif
-#if defined(_STDLIB_H_) || defined(_INC_STDLIB)
+#if !defined(VL_INC_STDLIB_H) && (defined(_STDLIB_H_) || defined(_INC_STDLIB))
 # define VL_INC_STDLIB_H
 #endif
-#if defined(_STDIO_H_) || defined(_INC_STDIO)
+#if !defined(VL_INC_STDIO_H) && (defined(_STDIO_H_) || defined(_INC_STDIO))
 # define VL_INC_STDIO_H
 #endif
-#if defined(_STRING_H_) || defined(_INC_STRING)
+#if !defined(VL_INC_STRING_H) && (defined(_STRING_H_) || defined(_INC_STRING))
 # define VL_INC_STRING_H
 #endif
+
+#if !defined(VL_NO_PLATFORM)
+#if OS_WINDOWS
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+#elif OS_LINUX
+#include <sys/stat.h>
+#include <unistd.h>
+
+#elif OS_MAC // I think it works with the same includes as linux for now...?
+#include <sys/stat.h>
+#include <unistd.h>
+
+#else
+#error Unsupported OS
+#endif // OS
+#endif // !defined(VL_NO_PLATFORM)
 
 /* DebugBreakpoint for different platforms.
 Implementation by SDL3 (sdl wiki says SDL2 also had this but code says since SDL3.1.3) */
@@ -266,8 +284,10 @@ thread_local u32 ErrorNumber = 0;
  * string_view_array must have count and items attributes
  */
 #define LinearSearch(arr, item, equal) \
-    for(size_t i = 0; i < (arr)->count; i++) { \
-        if(equal((item), (arr)->items[i])) { found = true; break; } \
+    for(size_t glue(i, glue(_, __LINE__)) = 0; \
+        glue(i, glue(_, __LINE__)) < (arr)->count; \
+        glue(i, glue(_, __LINE__))++) { \
+        if(equal((item), (arr)->items[glue(i, glue(_, __LINE__))])) { found = true; break; } \
     }
 
 ////////////////////////////////
@@ -327,6 +347,7 @@ VIEWPROC bool view_ContainsCharacter(view v, char c);
 #define view_EndWith view_EndsWith /* in case of singular/plural annoyance */
 VIEWPROC bool view_EndsWith(view v, view end);
 VIEWPROC view view_ChopByDelim(view *v, char delim);
+VIEWPROC view view_ChopByLine(view *v); // '\n' or "\r\n"
 VIEWPROC view view_ChopByAnyDelim(view *v, view delims, char *delimiter); // checks for any character in Delims, stores found delimiter in Delimiter
 VIEWPROC view view_ChopByView(view *v, view delim); // full view is the delim
 VIEWPROC view view_ChopLeft(view *v, size_t n);
@@ -336,8 +357,8 @@ VIEWPROC view view_TrimRight(view v);
 VIEWPROC view view_Trim(view v);
 
 #define view_IterateLines(src, idxName, lineName) \
-    view lineName = view_ChopByDelim((src), '\n'); \
-    for(size_t idxName = 0; (src)->count > 0 || lineName.count > 0; lineName = view_ChopByDelim((src), '\n'), idxName++)
+    view lineName = view_ChopByLine(src); \
+    for(size_t idxName = 0; (src)->count > 0 || lineName.count > 0; lineName = view_ChopByLine(src), idxName++)
 
 #define view_IterateSpaces(src, idxName, wordName) \
     view wordName = view_ChopByAnyDelim((src), VIEW_STATIC(" \n\t\v\f\r"), 0); \
@@ -461,7 +482,7 @@ ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **Spli
 PRAGMA(GCC diagnostic push)
 PRAGMA(GCC diagnostic ignored "-Wattributes")
 #endif
-raddbg_type_view(view, array($.Data, $.Len));
+raddbg_type_view(view, array($.items, $.count));
 #if defined(SDL_h_)
 raddbg_type_view(SDL_Surface, $.format == SDL_PixelFormat.SDL_PIXELFORMAT_RGBA32 ? 
     bitmap($.pixels, $.w, $.h, RGBA32) : $);
@@ -708,6 +729,30 @@ VIEWPROC view view_ChopByDelim(view *v, char delim)
     if(i < v->count) {
         v->count -= i + 1;
         v->items += i + 1;
+    }
+    else {
+        v->count -= i;
+        v->items += i;
+    }
+
+    return Result;
+}
+
+VIEWPROC view view_ChopByLine(view *v)
+{
+    size_t moveLen = 1;
+    size_t i = 0;
+    for(;i < v->count && v->items[i] != '\n';) i += 1;
+    if(v->items[i-1] == '\r') {
+        moveLen = 2;
+        i--;
+    }
+
+    view Result = view_FromParts((const char*)v->items, i);
+
+    if(i < v->count) {
+        v->count -= i + moveLen;
+        v->items += i + moveLen;
     }
     else {
         v->count -= i;

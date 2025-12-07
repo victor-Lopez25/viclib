@@ -9,6 +9,7 @@ void CompileStuff(void)
     VL_cc(&cmd);
     cmd_Append(&cmd, "../src/test.c");
     VL_ccOutput(&cmd, "test" VL_EXE_EXTENSION);
+    VL_ccDebug(&cmd);
     VL_ccWarnings(&cmd);
     VL_ccWarningsAsErrors(&cmd);
     if(!CmdRun(&cmd)) return;
