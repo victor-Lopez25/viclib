@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.5.3
+--version: 1.5.4
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -127,7 +127,7 @@ SOFTWARE.
 # define VL_INC_STRING_H
 #endif
 
-#if !defined(VL_NO_PLATFORM)
+#if !defined(VICLIB_NO_PLATFORM)
 #if OS_WINDOWS
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -143,7 +143,7 @@ SOFTWARE.
 #else
 #error Unsupported OS
 #endif // OS
-#endif // !defined(VL_NO_PLATFORM)
+#endif // !defined(VICLIB_NO_PLATFORM)
 
 /* DebugBreakpoint for different platforms.
 Implementation by SDL3 (sdl wiki says SDL2 also had this but code says since SDL3.1.3) */
@@ -471,31 +471,41 @@ ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **Spli
 # define temp_save() ArenaTemp.Used
 # define temp_rewind(checkpoint) ArenaTemp.Used = checkpoint;
 
-
 #endif
 
 ////////////////////////////////
 
 #ifdef RADDBG_MARKUP_H
-#if COMPILER_GCC || COMPILER_CLANG
-// temporary solution
-PRAGMA(GCC diagnostic push)
-PRAGMA(GCC diagnostic ignored "-Wattributes")
-#endif
+#if COMPILER_CL
 raddbg_type_view(view, array($.items, $.count));
+
 #if defined(SDL_h_)
 raddbg_type_view(SDL_Surface, $.format == SDL_PixelFormat.SDL_PIXELFORMAT_RGBA32 ? 
     bitmap($.pixels, $.w, $.h, RGBA32) : $);
 #endif
-#if COMPILER_GCC || COMPILER_CLANG
-RESTORE_WARNINGS
-#endif
-
+#endif // COMPILER_CL
 #endif // RADDBG_MARKUP_H
 
 ////////////////////////////////
 
-#if !defined(VICLIB_NO_FILE_IO)
+struct vl_globalcontext {
+    bool initted; // called VL_Init()
+    s64 initTime;
+#if !defined(VICLIB_NO_PLATFORM)
+#if OS_WINDOWS
+    LARGE_INTEGER performanceFrequency;
+#else
+
+#endif
+#endif // !defined(VICLIB_NO_PLATFORM)
+};
+
+extern struct vl_globalcontext VL_globalContext;
+
+VLIBPROC bool VL_Init(void);
+
+
+#if !defined(VICLIB_NO_PLATFORM)
 
 #define ERROR_READ_UNKNOWN 1
 #define ERROR_READ_FILE_NOT_FOUND 2
@@ -510,11 +520,8 @@ RESTORE_WARNINGS
 #define READ_ENTIRE_FILE_MAX 0xFFFFFFFF
 #endif
 
-#if defined(_WINBASE_) || defined(_UNISTD_H_)
 VLIBPROC bool VL_SetCurrentDir(const char *path);
-#endif
 
-#if defined(_APISETFILE_) || defined(VL_FILE_LINUX)
 typedef enum {
     VL_FILE_INVALID = -1,
     VL_FILE_REGULAR = 0,
@@ -524,35 +531,15 @@ typedef enum {
 } file_type;
 VLIBPROC bool GetLastWriteTime(const char *file, u64 *WriteTime);
 VLIBPROC file_type VL_GetFileType(const char *path);
-#else
-#define GetLastWriteTime(file, writeTime) \
-AssertMsgAlways(false, "To use GetLastWriteTime you must:\n" \
-    " - include windows.h or fileapi.h (windows api)\n" \
-    " - inlcude sys/stat.h (linux)")
-#define VL_GetFileType(file) \
-AssertMsgAlways(false, "To use GetLastWriteTime you must:\n" \
-    " - include windows.h or fileapi.h (windows api)\n" \
-    " - inlcude sys/stat.h (linux)")
-#endif
 
 #define VL_NANOS_PER_SEC 1000000000
-#if defined(_PROFILEAPI_H_) || (OS_LINUX && defined(_LINUX_TIME_H))
-// Gets nanoseconds since first time this was called
+// Gets nanoseconds since the time VL_Init() was called, 
+// if it wasn't called, it will get nanoseconds since unspecified epoch
 VLIBPROC u64 VL_GetNanos(void);
-#else
-#define VL_GetNanos() \
-AssertMsgAlways(false, "To use VL_GetNanos you must:\n" \
-    " - include windows.h or profileapi.h (windows api)\n" \
-    " - include time.h (linux api)")
-#endif
-
-#if defined(_APISETFILE_) || defined(VL_INC_STDIO_H) || defined(VL_FILE_LINUX)
 
 typedef struct {
 #if defined(_APISETFILE_)
     HANDLE File;
-#elif defined(VL_INC_STDIO_H)
-    FILE *File;
 #elif defined(VL_FILE_LINUX)
     int fd;
     bool didFirstIteration; // Need because fd could be 0 (stdin)
@@ -562,36 +549,19 @@ typedef struct {
     size_t RemainingFileSize;
 } file_chunk;
 
-
 VLIBPROC bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
 VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size);
 
-#if (defined(_APISETFILE_) && defined(_MEMORYAPI_H_)) || (defined(VL_INC_STDIO_H) && defined(VL_INC_STDLIB_H)) || (defined(VL_FILE_LINUX) && defined(_SYS_MMAN_H))
+#if defined(SDL_h_)
+#define ReadEntireFile(file, datasize) SDL_LoadFile(file, datasize)
+#else
 char *ReadEntireFile(char *File, size_t *Size);
 #endif
 
-#else
+#endif // !defined(VICLIB_NO_PLATFORM)
 
-#define ReadEntireFile(File, Size) (void)File; (void)Size; \
-AssertMsgAlways(false, "To use 'ReadEntireFile' you must\n:" \
-" - include both stdlib.h and stdio.h (stdlib)\n" \
-" - either windows.h or fileapi.h (windows api)\n" \
-" - include both unistd.h, sys/stat.h and sys/mman.h (linux)")
-#define ReadFileChunk(Chunk, File, ChunkSize) /* (void)Chunk; */\
-AssertMsgAlways(false, "To use 'ReadFileChunk' you must\n:" \
-" - include stdio.h (stdlib)\n" \
-" - either windows.h or fileapi.h (windows api)\n" \
-" - include unistd.h, sys/stat.h (linux)")
-#define WriteEntireFile(File, Data, Size) \
-AssertMsgAlways(false, "To use 'ReadFileChunk' you must\n:" \
-" - include stdio.h (stdlib)\n" \
-" - either windows.h or fileapi.h (windows api)\n" \
-" - include unistd.h, sys/stat.h (linux)")
-
-#endif
-#endif // !defined(VICLIB_NO_FILE_IO)
-
-#ifndef VICLIB_NO_SORT
+// TODO(vic): I think the sort doesn't work 100% of the time? test this
+#if !defined(VICLIB_NO_SORT)
 bool int_less_than(const void *A, const void *B);
 
 #define VL_Swap(A,B) temp = (A); (A) = (B); (B) = temp
@@ -641,7 +611,8 @@ VIEWPROC view view_FromCstr(const char *cstr)
 
 VIEWPROC view view_Slice(view a, size_t start, size_t end)
 {
-    AssertMsg(start <= end, "Start must be smaller or equal to End");
+    AssertMsg(start <= end, "start must be smaller or equal to end");
+    AssertMsg(end <= a.count, "end must be less or equal to the source view count");
     return view_FromParts(a.items + start, end - start);
 }
 
@@ -700,7 +671,8 @@ VIEWPROC const char *view_Contains(view haystack, view needle)
     // NOTE: wiki: https://en.wikipedia.org/wiki/Two-way_string-matching_algorithm
     for(size_t i = 0; i < haystack.count - needle.count; i++)
     {
-        if(mem_compare(haystack.items + i, needle.items, needle.count) == 0) return haystack.items + i;
+        if(mem_compare(haystack.items + i, needle.items, needle.count) == 0)
+            return haystack.items + i;
     }
     return 0;
 }
@@ -1047,16 +1019,16 @@ int view_ParseF64(view v, f64 *result, view *remaining)
 
 ////////////////////////////////
 
-#if !defined(VL_INC_STRING_H)
-#define VCL_ALIGN (sizeof(size_t)-1)
+#if !defined(VL_INC_STRING_H) && !defined(SDL_h_)
+#define VICLIB_MEMCPY_ALIGN (sizeof(size_t)-1)
 VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len)
 {
     u8 *d = (u8*)dst;
     const u8 *s = (const u8*)src;
-    if(((uintptr_t)d & VCL_ALIGN) != ((uintptr_t)s & VCL_ALIGN))
+    if(((uintptr_t)d & VICLIB_MEMCPY_ALIGN) != ((uintptr_t)s & VICLIB_MEMCPY_ALIGN))
         goto misaligned;
 
-    for(; ((uintptr_t)d & VCL_ALIGN) && len != 0; len--) *d++ = *s++;
+    for(; ((uintptr_t)d & VICLIB_MEMCPY_ALIGN) && len != 0; len--) *d++ = *s++;
     if(len != 0) {
         size_t *wideDst = (size_t*)d;
         const size_t *wideSrc = (const size_t*)s;
@@ -1068,7 +1040,7 @@ misaligned:
         for(; len != 0; len--) *d++ = *s++;
     }
 }
-#undef VCL_ALIGN
+#undef VICLIB_MEMCPY_ALIGN
 
 VLIBPROC void mem_copy(void *dst, const void *src, size_t len)
 {
@@ -1147,11 +1119,11 @@ VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
     }
     return 0;
 }
-#endif // !defined(VL_INC_STRING_H)
+#endif // !defined(VL_INC_STRING_H) && !defined(SDL_h_)
 
 ////////////////////////////////
 
-#ifndef VICLIB_NO_TEMP_ARENA
+#if !defined(VICLIB_NO_TEMP_ARENA)
 # ifndef VICLIB_TEMP_SIZE
 #  define VICLIB_TEMP_SIZE (4*1024*1024)
 # endif // !defined(VICLIB_TEMP_SIZE)
@@ -1282,22 +1254,59 @@ ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem)
 
 ////////////////////////////////
 
-#if defined(_WINBASE_)
-VLIBPROC bool VL_SetCurrentDir(const char *path)
+struct vl_globalcontext VL_globalContext = {0};
+
+VLIBPROC bool VL_Init(void)
 {
-    return (bool)SetCurrentDirectory(path);
-}
-#elif defined(_UNISTD_H_)
-VLIBPROC bool VL_SetCurrentDir(const char *path)
-{
-    return chdir(path) >= 0;
-}
+    if(VL_globalContext.initted) {
+        return false; // Only do init once
+    }
+    VL_globalContext.initted = true;
+#if !defined(VICLIB_NO_PLATFORM)
+#if OS_WINDOWS
+    LARGE_INTEGER time;
+#ifdef __cplusplus
+    VL_globalContext.performanceFrequency = {0};
+#else
+    VL_globalContext.performanceFrequency = (LARGE_INTEGER){0};
 #endif
 
-#if defined(_APISETFILE_) // windows fileapi.h included
+    QueryPerformanceFrequency(&VL_globalContext.performanceFrequency);
+    QueryPerformanceCounter(&time);
+    u64 secs = time.QuadPart / VL_globalContext.performanceFrequency.QuadPart;
+    u64 nanos = (time.QuadPart % VL_globalContext.performanceFrequency.QuadPart) *
+        VL_NANOS_PER_SEC / VL_globalContext.performanceFrequency.QuadPart;
+    VL_globalContext.initTime = VL_NANOS_PER_SEC * secs + nanos;
+#elif OS_LINUX || OS_MAC
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    VL_globalContext.initTime = VL_NANOS_PER_SEC * ts.tv_sec + ts.tv_nsec;
+#else
+#error Unsupported
+#endif // OS
+#endif // !defined(VICLIB_NO_PLATFORM)
+
+    return true;
+}
+
+#if !defined(VICLIB_NO_PLATFORM)
+
+VLIBPROC bool VL_SetCurrentDir(const char *path)
+{
+#if OS_WINDOWS
+    return (bool)SetCurrentDirectory(path);
+#elif OS_LINUX || OS_MAC
+    return chdir(path) >= 0;
+#else
+#error Unsupported
+#endif
+}
+
 VLIBPROC bool GetLastWriteTime(const char *file, u64 *WriteTime)
 {
     bool ok = false;
+
+#if OS_WINDOWS
     WIN32_FILE_ATTRIBUTE_DATA data;
     if(GetFileAttributesEx(file, GetFileExInfoStandard, &data) &&
         (uint64_t)data.nFileSizeHigh + (uint64_t)data.nFileSizeLow > 0)
@@ -1305,87 +1314,64 @@ VLIBPROC bool GetLastWriteTime(const char *file, u64 *WriteTime)
         *WriteTime = *(uint64_t*)&data.ftLastWriteTime;
         ok = true;
     }
+#elif OS_LINUX || OS_MAC
+    struct stat attr;
+    if(!stat(file, &attr) && attr.st_size > 0) {
+        ok = true;
+        *WriteTime = *(uint64_t*)&attr.st_mtim;
+    }
+#else
+#error Unsupported
+#endif
+
     return ok;
 }
 
 VLIBPROC file_type VL_GetFileType(const char *path)
 {
+#if OS_WINDOWS
     DWORD attr = GetFileAttributesA(path);
     if(attr == INVALID_FILE_ATTRIBUTES) return VL_FILE_INVALID;
     if(attr & FILE_ATTRIBUTE_DIRECTORY) return VL_FILE_DIRECTORY;
     // TODO: detect symlinks on Windows (whatever that means on Windows anyway)
     return VL_FILE_REGULAR;
-}
-#elif defined(_SYS_STAT_H_)
-VLIBPROC bool GetLastWriteTime(const char *file, uint64_t *WriteTime)
-{
-    struct stat attr;
-    bool ok = false;
-    if(!stat(file, &attr) && attr.st_size > 0) {
-        ok = true;
-        *WriteTime = *(uint64_t*)&attr.st_mtim;
-    }
-    return ok;
-}
-
-VLIBPROC file_type VL_GetFileType(const char *path)
-{
+#elif OS_LINUX || OS_MAC
     struct stat statbuf;
     if(lstat(path, &statbuf) < 0) return VL_FILE_INVALID;
     if(S_ISREG(statbuf.st_mode)) return VL_FILE_REGULAR;
     if(S_ISDIR(statbuf.st_mode)) return VL_FILE_DIRECTORY;
     if(S_ISLNK(statbuf.st_mode)) return VL_FILE_SYMLINK;
     return VL_FILE_OTHER;
-}
+#else
+#error Unsupported
 #endif
+}
 
-#if defined(_PROFILEAPI_H_)
 VLIBPROC u64 VL_GetNanos(void)
 {
-    static bool initted = false;
-    static LARGE_INTEGER frequency = {0};
-    static u64 initTime;
-    if(!initted) {
-        QueryPerformanceFrequency(&frequency);
-
-        LARGE_INTEGER time;
-        QueryPerformanceCounter(&time);
-        u64 secs = time.QuadPart / frequency.QuadPart;
-        u64 nanos = (time.QuadPart % frequency.QuadPart) * VL_NANOS_PER_SEC / frequency.QuadPart;
-        initTime = VL_NANOS_PER_SEC * secs + nanos;
-        initted = true;
-    }
-
+#if OS_WINDOWS
     LARGE_INTEGER time;
     QueryPerformanceCounter(&time);
-    u64 secs = time.QuadPart / frequency.QuadPart;
-    u64 nanos = (time.QuadPart % frequency.QuadPart) * VL_NANOS_PER_SEC / frequency.QuadPart;
-    return (VL_NANOS_PER_SEC * secs + nanos) - initTime;
-}
-#elif OS_LINUX && defined(_LINUX_TIME_H)
-VLIBPROC u64 VL_GetNanos(void)
-{
-    static bool initted = false;
-    static u64 initTime;
-    if(!initted) {
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        initTime = VL_NANOS_PER_SEC * ts.tv_sec + ts.tv_nsec;
-    }
-
+    u64 secs = time.QuadPart / VL_globalContext.performanceFrequency.QuadPart;
+    u64 nanos = (time.QuadPart % VL_globalContext.performanceFrequency.QuadPart) * 
+        VL_NANOS_PER_SEC / VL_globalContext.performanceFrequency.QuadPart;
+    return (VL_NANOS_PER_SEC * secs + nanos) - VL_globalContext.initTime;
+#elif OS_LINUX || OS_MAC
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (VL_NANOS_PER_SEC * ts.tv_sec + ts.tv_nsec) - initTime;
-}
+#else
+#error Unsupported
 #endif
+}
 
 #if !defined(VICLIB_NO_FILE_IO)
-#if defined(_APISETFILE_) // windows fileapi.h included
 
-#if defined(_MEMORYAPI_H_)
+#if !defined(SDL_h_)
 PUSH_IGNORE_UNINITIALIZED
 char *ReadEntireFile(char *File, size_t *Size)
 {
+#if OS_WINDOWS
     ErrorNumber = 0;
     AssertMsg(Size != 0, "Size parameter must be a valid pointer");
     char *Result = 0;
@@ -1438,16 +1424,58 @@ char *ReadEntireFile(char *File, size_t *Size)
     }
 
     CloseHandle(FileHandle);
+#elif OS_LINUX || OS_MAC
+    ErrorNumber = 0;
+    int fd = open(File, O_RDONLY);
+    if(fd == -1) {
+        if(errno == EACCES || errno == EPERM) ErrorNumber = ERROR_FILE_ACCESS_DENIED;
+        else if(errno == ENOMEM) ErrorNumber = ERROR_READ_NO_MEM;
+        else if(errno == EOVERFLOW) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+        else if(errno == EBADF || errno == ENOENT)
+            ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
+        else ErrorNumber = ERROR_READ_UNKNOWN;
+        return 0;
+    }
+
+    struct stat stat;
+    if(fstat(fd, &stat) == -1) {
+        ErrorNumber = ERROR_READ_UNKNOWN;
+        close(fd);
+        return 0;
+    }
+
+    char *Result = (char*)mmap(0, stat.st_size, PROT_READ | PROT_WRITE, MAP_SHARED);
+    if(Result == MAP_FAILED) {
+        ErrorNumber = ERROR_READ_UNKNOWN;
+        close(fd);
+        return 0;
+    }
+
+    ssize_t bytesRead = read(fd, Result, stat.st_size);
+    if(bytesRead != stat.st_size) {
+        ErrorNumber = ERROR_READ_UNKNOWN;
+        close(fd);
+        return 0;
+    }
+
+    close(fd);
+
+    if(Size) *Size = stat.st_size;
+#else
+#error Unsupported
+#endif
     return Result;
 }
 RESTORE_WARNINGS
-#endif // defined(_MEMORYAPI_H_) (VirtualAlloc)
+
+#endif // !defined(SDL_h_)
 
 bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
 {
     AssertMsg(Chunk->Buffer && Chunk->BufferSize, "Requires a valid buffer and a buffer size");
     ErrorNumber = 0;
 
+#if OS_WINDOWS
     if(!Chunk->File) {
         Chunk->File = CreateFileA(File, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
         if(Chunk->File == INVALID_HANDLE_VALUE) {
@@ -1486,99 +1514,7 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
         return false;
     }
 
-    Chunk->RemainingFileSize -= (u32)OutSize;
-    return true;
-}
-
-VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
-{
-    bool result = true;
-    HANDLE fhandle = INVALID_HANDLE_VALUE;
-
-    fhandle = CreateFileA(File, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
-    if(fhandle == INVALID_HANDLE_VALUE) {
-        DWORD Error = GetLastError();
-        switch(Error) {
-            case ERROR_INVALID_DRIVE: fallthrough;
-            case ERROR_PATH_NOT_FOUND: fallthrough;
-            case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_WRITE_PATH_NOT_FOUND; break;
-            case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
-
-            default: ErrorNumber = ERROR_WRITE_UNKNOWN;
-        }
-        VL_ReturnDefer(false);
-    }
-
-    Assert(Size < 0xFFFFFFFFULL);
-    u8 *fData = (u8*)Data;
-    DWORD bytesToWriteTotal = (DWORD)Size;
-    DWORD bytesWrittenTotal = 0;
-    DWORD bytesWritten = 0;
-    while(bytesToWriteTotal > bytesWrittenTotal) {
-        if(!WriteFile(fhandle, fData, bytesToWriteTotal - bytesWrittenTotal, &bytesWritten, 0)) {
-            ErrorNumber = ERROR_WRITE_UNKNOWN;
-            VL_ReturnDefer(false);
-        }
-        bytesWrittenTotal += bytesWritten;
-        fData += bytesWritten;
-    }
-
-defer:
-    if(fhandle != INVALID_HANDLE_VALUE) CloseHandle(fhandle);
-    return result;
-}
-
-#elif defined(VL_FILE_LINUX)
-
-#if defined(_SYS_MMAN_H)
-char *ReadEntireFile(char *File, size_t *Size)
-{
-    ErrorNumber = 0;
-    int fd = open(File, O_RDONLY);
-    if(fd == -1) {
-        if(errno == EACCES || errno == EPERM) ErrorNumber = ERROR_FILE_ACCESS_DENIED;
-        else if(errno == ENOMEM) ErrorNumber = ERROR_READ_NO_MEM;
-        else if(errno == EOVERFLOW) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
-        else if(errno == EBADF || errno == ENOENT)
-            ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-        else ErrorNumber = ERROR_READ_UNKNOWN;
-        return 0;
-    }
-
-    struct stat stat;
-    if(fstat(fd, &stat) == -1) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
-        close(fd);
-        return 0;
-    }
-
-    char *Result = (char*)mmap(0, stat.st_size, PROT_READ | PROT_WRITE, MAP_SHARED);
-    if(Result == MAP_FAILED) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
-        close(fd);
-        return 0;
-    }
-
-    ssize_t bytesRead = read(fd, Result, stat.st_size);
-    if(bytesRead != stat.st_size) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
-        close(fd);
-        return 0;
-    }
-
-    close(fd);
-
-    if(Size) *Size = stat.st_size;
-
-    return Result;
-}
-#endif // defined(_SYS_MMAN_H)
-
-bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
-{
-    AssertMsg(Chunk->Buffer && Chunk->BufferSize, "Requires a valid buffer and a buffer size");
-    ErrorNumber = 0;
-
+#elif OS_LINUX || OS_LINUX
     if(!Chunk->didFirstIteration) {
         Chunk->didFirstIteration = true;
         Chunk->fd = open(File, O_RDONLY);
@@ -1615,125 +1551,9 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
         ErrorNumber = ERROR_READ_UNKNOWN;
         return false;
     }
-
-    Chunk->RemainingFileSize -= (u32)OutSize;
-    return true;
-}
-
-// TODO: WriteEntire file for linux
-
-#elif defined(VL_INC_STDIO_H)
-
-#if defined(VL_INC_STDLIB_H)
-PUSH_IGNORE_UNINITIALIZED
-char *ReadEntireFile(char *File, size_t *Size)
-{
-    ErrorNumber = 0;
-    // ERROR_READ_UNKNOWN - fseek, ftell failed
-    // fopen could fail due to many things
-    // TODO: Set ErrorNumber depending on them
-    // ERROR_READ_NO_MEM - malloc failed
-    // ERROR_READ_FILE_TOO_BIG - READ_ENTIRE_FILE_MAX exceeded
-    FILE *f = fopen(File, "rb");
-    bool ok = f != 0;
-    char *result = 0;
-    if(!ok) ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-
-    if(ok) {
-        ok = fseek(f, 0, SEEK_END) >= 0;
-        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
-    }
-
-    long m;
-    if(ok) {
-        m = ftell(f);
-        ok = (u64)m <= (u64)READ_ENTIRE_FILE_MAX;
-        if(!ok) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
-
-        ok = m >= 0;
-        // ftell() fail
-        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
-    }
-
-    if(ok) {
-        result = malloc(sizeof(char) * m);
-        ok = result != 0;
-        if(!ok) ErrorNumber = ERROR_READ_NO_MEM;
-    }
-
-    if(ok) {
-        ok = fseek(f, 0, SEEK_SET) >= 0;
-        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
-    }
-
-    if(ok) {
-        size_t n = fread(result, 1, m, f);
-        ok = n == (size_t)m;
-        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
-    }
-
-    if(ok) {
-        ok = !ferror(f);
-        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
-    }
-
-    if(Size) *Size = m;
-
-    if(f) fclose(f);
-    if(!ok && result) {
-        free(result);
-        result = 0;
-    }
-
-    return result;
-}
-RESTORE_WARNINGS
-#endif // defined(VL_INC_STDLIB_H)
-
-bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
-{
-    AssertMsg(Chunk->Buffer && Chunk->BufferSize, "Requires a valid buffer and a buffer size");
-    ErrorNumber = 0;
-
-    if(!Chunk->File) {
-        Chunk->File = fopen(File, "rb");
-        if(!Chunk->File) {
-            ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-            return false;
-        }
-
-        if(fseek(Chunk->File, 0, SEEK_END) < 0) {
-            ErrorNumber = ERROR_READ_UNKNOWN;
-            return false;
-        }
-
-        long m = ftell(Chunk->File);
-        if(m < 0) {
-            ErrorNumber = ERROR_READ_UNKNOWN;
-            return false;
-        }
-
-        if(fseek(Chunk->File, 0, SEEK_SET) < 0) {
-            ErrorNumber = ERROR_READ_UNKNOWN;
-            return false;
-        }
-
-        Chunk->RemainingFileSize = m;
-    } else if(Chunk->RemainingFileSize == 0) {
-        // Success
-        fclose(Chunk->File);
-        Chunk->File = 0;
-        return false;
-    }
-    size_t OutSize = min(Chunk->RemainingFileSize, (size_t)Chunk->BufferSize);
-
-    if(OutSize == fread(Chunk->Buffer, 1, (u32)OutSize, Chunk->File))
-    {
-        *ChunkSize = (u32)OutSize;
-    } else {
-        ErrorNumber = ERROR_READ_UNKNOWN;
-        return false;
-    }
+#else
+#error Unsupported
+#endif
 
     Chunk->RemainingFileSize -= (u32)OutSize;
     return true;
@@ -1741,36 +1561,53 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
 
 VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
 {
-    const char *buf = 0;
-    FILE *f = fopen(File, "wb");
-    if(f == 0) {
-        ErrorNumber = ERROR_WRITE_UNKNOWN; // TODO: Check errors to see cause
-        return false;
-    }
+    bool result = true;
 
-    //           len
-    //           v
-    // aaaaaaaaaa
-    //     ^
-    //     data
+#if OS_WINDOWS
+    HANDLE fhandle = INVALID_HANDLE_VALUE;
 
-    buf = (const char*)Data;
-    while(Size > 0) {
-        size_t n = fwrite(buf, 1, Size, f);
-        if(ferror(f)) {
-            fclose(f);
-            ErrorNumber = ERROR_WRITE_UNKNOWN; // TODO: Check errors to see cause
-            return false;
+    fhandle = CreateFileA(File, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if(fhandle == INVALID_HANDLE_VALUE) {
+        DWORD Error = GetLastError();
+        switch(Error) {
+            case ERROR_INVALID_DRIVE: fallthrough;
+            case ERROR_PATH_NOT_FOUND: fallthrough;
+            case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_WRITE_PATH_NOT_FOUND; break;
+            case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
+
+            default: ErrorNumber = ERROR_WRITE_UNKNOWN;
         }
-        Size -= n;
-        buf  += n;
+        VL_ReturnDefer(false);
     }
 
-    return true;
+    Assert(Size < 0xFFFFFFFFULL);
+    u8 *fData = (u8*)Data;
+    DWORD bytesToWriteTotal = (DWORD)Size;
+    DWORD bytesWrittenTotal = 0;
+    DWORD bytesWritten = 0;
+    while(bytesToWriteTotal > bytesWrittenTotal) {
+        if(!WriteFile(fhandle, fData, bytesToWriteTotal - bytesWrittenTotal, &bytesWritten, 0)) {
+            ErrorNumber = ERROR_WRITE_UNKNOWN;
+            VL_ReturnDefer(false);
+        }
+        bytesWrittenTotal += bytesWritten;
+        fData += bytesWritten;
+    }
+
+defer:
+    if(fhandle != INVALID_HANDLE_VALUE) CloseHandle(fhandle);
+    return result;
+#elif OS_LINUX || OS_MAC
+// TODO: WriteEntire file for linux
+#error TODO
+    return result;
+#else
+#error
+#endif
 }
 
-#endif // stdio.h included
 #endif // !defined(VICLIB_NO_FILE_IO)
+#endif // !defined(VICLIB_NO_PLATFORM)
 
 #ifndef VICLIB_NO_SORT
 
@@ -1904,6 +1741,7 @@ void VL_HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)
         }
     }
 }
+
 #endif // !defined(VICLIB_NO_SORT)
 #endif // VICLIB_IMPLEMENTATION
 #endif //VICLIB_H
