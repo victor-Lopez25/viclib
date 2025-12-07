@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.5.4
+--version: 1.5.5
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -537,6 +537,8 @@ VLIBPROC file_type VL_GetFileType(const char *path);
 // if it wasn't called, it will get nanoseconds since unspecified epoch
 VLIBPROC u64 VL_GetNanos(void);
 
+#if !defined(VICLIB_NO_FILE_IO)
+
 typedef struct {
 #if defined(_APISETFILE_)
     HANDLE File;
@@ -550,14 +552,16 @@ typedef struct {
 } file_chunk;
 
 VLIBPROC bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
-VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size);
 
 #if defined(SDL_h_)
 #define ReadEntireFile(file, datasize) SDL_LoadFile(file, datasize)
+#define WriteEntireFile(file, data, datasize) SDL_SaveFile(file, data, datasize)
 #else
-char *ReadEntireFile(char *File, size_t *Size);
+VLIBPROC char *ReadEntireFile(char *File, size_t *Size);
+VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size);
 #endif
 
+#endif // !defined(VICLIB_NO_FILE_IO)
 #endif // !defined(VICLIB_NO_PLATFORM)
 
 // TODO(vic): I think the sort doesn't work 100% of the time? test this
@@ -1369,7 +1373,7 @@ VLIBPROC u64 VL_GetNanos(void)
 
 #if !defined(SDL_h_)
 PUSH_IGNORE_UNINITIALIZED
-char *ReadEntireFile(char *File, size_t *Size)
+VLIBPROC char *ReadEntireFile(char *File, size_t *Size)
 {
 #if OS_WINDOWS
     ErrorNumber = 0;
