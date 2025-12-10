@@ -78,32 +78,32 @@ void TestParsing()
     s64 Val;
     bool ok = view_ParseS64(TestStr, &Val, 0);
     Assert(ok);
-    printf("%lld\n", Val);
+    printf("%ld\n", Val);
 
     TestStr = VIEW("+123Hello");
     view Remaining;
     Assert(view_ParseS64(TestStr, &Val, &Remaining));
-    printf("string: \""VIEW_FMT"\" -> num: %lld, remaining: \""VIEW_FMT"\"\n",
+    printf("string: \""VIEW_FMT"\" -> num: %ld, remaining: \""VIEW_FMT"\"\n",
            VIEW_ARG(TestStr), Val, VIEW_ARG(Remaining));
 
     TestStr = VIEW("-123");
     Assert(view_ParseS64(TestStr, &Val, 0));
-    printf("%lld\n", Val);
+    printf("%ld\n", Val);
     TestStr = VIEW("+123");
     Assert(view_ParseS64(TestStr, &Val, 0));
-    printf("%lld\n", Val);
+    printf("%ld\n", Val);
 
     TestStr = VIEW("0xFF");
     Assert(view_ParseS64(TestStr, &Val, 0));
-    printf("%lld\n", Val);
+    printf("%ld\n", Val);
 
     TestStr = VIEW("0b0110");
     Assert(view_ParseS64(TestStr, &Val, 0));
-    printf("%lld\n", Val);
+    printf("%ld\n", Val);
 
     TestStr = VIEW("-0d1234");
     Assert(view_ParseS64(TestStr, &Val, 0));
-    printf("%lld\n", Val);
+    printf("%ld\n", Val);
 
     f64 F64Val;
     TestStr = VIEW("2.71828");

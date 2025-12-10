@@ -6,7 +6,7 @@
 void TestReadEntireFile(void)
 {
     size_t Size;
-    char *Data = ReadEntireFile("../src/test_windows.c", &Size);
+    char *Data = ReadEntireFile(&ArenaTemp, "../src/test_windows.c", &Size);
     if(Data) {
         printf("%.*s\n", (int)Size, Data);
     }

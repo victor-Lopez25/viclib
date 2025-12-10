@@ -615,21 +615,21 @@ VLIBPROC bool VL_CopyFile(const char *src, const char *dst)
     Assert(buf != NULL && "Buy more RAM lol!!");
     bool result = true;
 
-    src_fd = open(src_path, O_RDONLY);
+    src_fd = open(src, O_RDONLY);
     if(src_fd < 0) {
-        VL_Log(VL_ERROR, "Could not open file %s: %s", src_path, strerror(errno));
+        VL_Log(VL_ERROR, "Could not open file %s: %s", src, strerror(errno));
         VL_ReturnDefer(false);
     }
 
     struct stat src_stat;
     if(fstat(src_fd, &src_stat) < 0) {
-        VL_Log(VL_ERROR, "Could not get mode of file %s: %s", src_path, strerror(errno));
+        VL_Log(VL_ERROR, "Could not get mode of file %s: %s", src, strerror(errno));
         VL_ReturnDefer(false);
     }
 
-    dst_fd = open(dst_path, O_CREAT | O_TRUNC | O_WRONLY, src_stat.st_mode);
+    dst_fd = open(dst, O_CREAT | O_TRUNC | O_WRONLY, src_stat.st_mode);
     if(dst_fd < 0) {
-        VL_Log(VL_ERROR, "Could not create file %s: %s", dst_path, strerror(errno));
+        VL_Log(VL_ERROR, "Could not create file %s: %s", dst, strerror(errno));
         VL_ReturnDefer(false);
     }
 
@@ -637,14 +637,14 @@ VLIBPROC bool VL_CopyFile(const char *src, const char *dst)
         ssize_t n = read(src_fd, buf, bufSize);
         if(n == 0) break;
         if(n < 0) {
-            VL_Log(VL_ERROR, "Could not read from file %s: %s", src_path, strerror(errno));
+            VL_Log(VL_ERROR, "Could not read from file %s: %s", src, strerror(errno));
             VL_ReturnDefer(false);
         }
         char *buf2 = buf;
         while (n > 0) {
             ssize_t m = write(dst_fd, buf2, n);
             if(m < 0) {
-                VL_Log(VL_ERROR, "Could not write to file %s: %s", dst_path, strerror(errno));
+                VL_Log(VL_ERROR, "Could not write to file %s: %s", dst, strerror(errno));
                 VL_ReturnDefer(false);
             }
             n    -= m;
@@ -1167,7 +1167,9 @@ defer:
     if(optFdout) fd_Close(*optFdout);
     if(optFderr) fd_Close(*optFderr);
     opt.cmd->count = 0;
+#if OS_WINDOWS
     opt.cmd->msvc_linkflags = 0;
+#endif
     return result;
 }
 
@@ -1584,8 +1586,8 @@ VLIBPROC char *VL_temp_FileName(const char *path)
     // We are implementing our own one because libc vendors cannot agree on whether basename(3)
     // modifies the path or not.
     if(!path || !*path) return ".";
-    char *s = temp_strdup(path, .Alignment = 1);
-    size_t i = strlen(s)-1;
+    size_t i = strlen(path)-1;
+    char *s = temp_strndup(path, i);
     for(; i&&s[i]=='/'; i--) s[i] = 0;
     for(; i&&s[i-1]!='/'; i--);
     return s+i;
@@ -1707,10 +1709,12 @@ VLIBPROC void VL_ccDebug_Opt(struct compiler_info_opts opt)
 
 VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, size_t libcount)
 {
+#if OS_WINDOWS
     if(opt.cc == CCompiler_MSVC && !opt.cmd->msvc_linkflags) {
         cmd_Append(opt.cmd, "/link");
         opt.cmd->msvc_linkflags = true;
     }
+#endif
 
     for(size_t i = 0; i < libcount; i++) {
         switch(opt.cc) {
@@ -1727,10 +1731,12 @@ VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, si
 
 VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpath)
 {
+#if OS_WINDOWS
     if(opt.cc == CCompiler_MSVC && !opt.cmd->msvc_linkflags) {
         cmd_Append(opt.cmd, "/link");
         opt.cmd->msvc_linkflags = true;
     }
+#endif
 
     switch(opt.cc) {
         case CCompiler_GCC:
@@ -1863,7 +1869,7 @@ static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd 
 
         // NOTE: This leaks a bit of memory in the child process.
         // But do we actually care? It's a one off leak anyway...
-        VL_Cmd cmdNull = {0};
+        vl_cmd cmdNull = {0};
         da_AppendMany(&cmdNull, cmd.items, cmd.count);
         cmd_Append(&cmdNull, NULL);
 
