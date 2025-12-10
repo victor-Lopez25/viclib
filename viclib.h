@@ -1353,6 +1353,8 @@ VLIBPROC file_type VL_GetFileType(const char *path)
 VLIBPROC u64 VL_GetNanos(void)
 {
 #if OS_WINDOWS
+    AssertMsg(VL_globalContext.performanceFrequency.QuadPart != 0, "Error: You must call VL_Init() before calling VL_GetNanos()");
+
     LARGE_INTEGER time;
     QueryPerformanceCounter(&time);
     u64 secs = time.QuadPart / VL_globalContext.performanceFrequency.QuadPart;
@@ -1407,7 +1409,7 @@ VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size)
 
     size_t arenaMark = Arena->used;
     if(ok) {
-        if(ArenaGetRemaining(Arena) < FileSize.QuadPart) {
+        if(ArenaGetRemaining(Arena) < (size_t)FileSize.QuadPart) {
             ErrorNumber = ERROR_READ_NO_MEM;
             ok = false;
         } else {

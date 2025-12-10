@@ -42,7 +42,9 @@ void TestNeedsRebuild(void)
 
 int main(int argc, char **argv)
 {
-    VL_GO_REBUILD_URSELF(argc, argv, "vl_build.h");
+    //VL_GO_REBUILD_URSELF(argc, argv, "vl_build.h");
+    bool ok = VL_Init();
+    AssertAlways(ok);
 
     MkdirIfNotExist("bin");
     VL_Pushd("bin");
