@@ -21,14 +21,12 @@ void CompileStuff(void)
     VL_ccWarningsAsErrors(&cmd);
     if(!CmdRun(&cmd)) return;
 
-#if OS_WINDOWS
     VL_cc(&cmd);
-    cmd_Append(&cmd, "../src/test_windows.c");
-    VL_ccOutput(&cmd, "test_windows" VL_EXE_EXTENSION);
+    cmd_Append(&cmd, "../src/test_file_io.c");
+    VL_ccOutput(&cmd, "test_file_io" VL_EXE_EXTENSION);
     VL_ccWarnings(&cmd);
     VL_ccWarningsAsErrors(&cmd);
     if(!CmdRun(&cmd)) return;
-#endif
 }
 
 void TestNeedsRebuild(void)
@@ -42,7 +40,7 @@ void TestNeedsRebuild(void)
 
 int main(int argc, char **argv)
 {
-    //VL_GO_REBUILD_URSELF(argc, argv, "vl_build.h");
+    VL_GO_REBUILD_URSELF(argc, argv, "vl_build.h");
     bool ok = VL_Init();
     AssertAlways(ok);
 
