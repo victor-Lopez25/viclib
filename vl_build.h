@@ -1,5 +1,5 @@
 // [vl_build.h](https://github.com/victor-Lopez25/viclib) © 2024 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-// version: 1.3.3
+// version: 1.3.4
 #ifndef VL_BUILD_H
 #define VL_BUILD_H
 
@@ -1887,6 +1887,11 @@ static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd 
 VLIBPROC void VL__GoRebuildUrself(int argc, char **argv, const char **src_paths, size_t path_count)
 {
     Assert(argc > 0);
+    // We don't want to recompile if a debugger is present, this would cause
+    // the debugger to get confused since it doesn't know that 
+    // the new process is the one that it needs to debug
+    if(IsDebuggerPresent()) return;
+
     const char *bin_path = *argv;
     argc--;
     argv++;

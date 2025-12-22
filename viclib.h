@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.5.5
+--version: 1.5.6
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -525,6 +525,10 @@ VLIBPROC bool VL_Init(void);
 #endif
 
 VLIBPROC bool VL_SetCurrentDir(const char *path);
+
+#if !OS_WINDOWS
+bool IsDebuggerPresent(void);
+#endif
 
 typedef enum {
     VL_FILE_INVALID = -1,
@@ -1304,6 +1308,41 @@ VLIBPROC bool VL_SetCurrentDir(const char *path)
 #error Unsupported
 #endif
 }
+
+#if !OS_WINDOWS
+#include <string.h> /* strstr */
+#include <ctype.h>
+bool IsDebuggerPresent(void)
+{
+    // https://stackoverflow.com/questions/3596781/how-to-detect-if-the-current-process-is-being-run-by-gdb
+    char buf[4096];
+    const int status_fd = open("/proc/self/status", O_RDONLY);
+    if (status_fd == -1)
+        return false;
+
+    const ssize_t num_read = read(status_fd, buf, sizeof(buf) - 1);
+    close(status_fd);
+
+    if (num_read <= 0)
+        return false;
+
+    buf[num_read] = '\0';
+    char tracerPidString[] = "TracerPid:";
+    const char *tracer_pid_ptr = strstr(buf, tracerPidString); // TODO: use view_Contains (when it is better)
+    if (!tracer_pid_ptr)
+        return false;
+    
+    for (const char* characterPtr = tracer_pid_ptr + sizeof(tracerPidString) - 1; characterPtr <= buf + num_read; ++characterPtr)
+    {
+        if (isspace(*characterPtr))
+            continue;
+        else
+            return isdigit(*characterPtr) != 0 && *characterPtr != '0';
+    }
+
+    return false;
+}
+#endif
 
 VLIBPROC bool GetLastWriteTime(const char *file, u64 *WriteTime)
 {
