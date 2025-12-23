@@ -218,7 +218,23 @@ extern void __cdecl __debugbreak(void);
 
 #define VL_ReturnDefer(value) do { result = (value); goto defer; } while(0)
 
-#define fallthrough
+#if defined(__cplusplus)
+# if __cplusplus >= 201703L
+#  define fallthrough [[fallthrough]]
+# elif defined(__GNUC__) && __GNUC__ >= 7
+#  define fallthrough __attribute__((fallthrough))
+# else
+#  define fallthrough /* fall through */
+# endif
+#else
+# if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+#  define fallthrough [[fallthrough]]
+# elif defined(__GNUC__) && __GNUC__ >= 7
+#  define fallthrough __attribute__((fallthrough))
+# else
+#  define fallthrough /* fall through */
+# endif
+#endif
 
 #include <stdint.h>
 #include <stdbool.h>
