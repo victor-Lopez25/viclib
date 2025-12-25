@@ -48,13 +48,14 @@ int main()
 {
     char *file = "somefile.txt";
     size_t filesize;
-    // since stdio.h and stdlib.h have been included before viclib.h, this will call the stdlib version of ReadEntireFile
-    char *data = ReadEntireFile(file, &filesize, &ArenaTemp);
+    // since VICLIB_NO_PLATFORM was not defined before including viclib.h, this will call the specific OS version of ReadEntireFile
+    char *data = ReadEntireFile(&ArenaTemp, file, &filesize);
     if(!data) {
         fprintf(stderr, "Could not read file '%s': %d\n", file, ErrorNumber); // ErrorNumber is defined in viclib.h
         return 1;
     }
-    printf("%.*s\n", (int)filesize, data); // print the entire file
+    view v = view_FromParts(data, filesize);
+    printf(VIEW_FMT"\n", VIEW_ARG(v)); // print the entire file
     return 0;
 }
 ```
@@ -73,9 +74,10 @@ int main(int argc, char **argv)
 
     vl_cmd cmd = {0};
     VL_cc(&cmd); // chooses the compiler you used to compile this by default
-    VL_ccOutput(&cmd, "test" VL_EXE_EXTENSION);
-    cmd_Append(&cmd, "src/main.c");
-    VL_ccWarnings(&cmd);
+    VL_ccOutput(&cmd, "test" VL_EXE_EXTENSION); // add an output, on msvc it will add "/Fe:<output>", on gcc/clang it will add "-o", "<output>"
+    cmd_Append(&cmd, "src/main.c"); // add source files, or any other arguments
+    VL_ccWarnings(&cmd); // add warnings for each compiler; msvc -> "-W4", gcc/clang -> "-Wall", "-Wextra"
+    VL_ccDebug(&cmd); // add debug info for each compiler; msvc -> "-Zi", gcc/clang -> "-g"
 
     // runs the command stored in cmd and resets cmd
     if(!CmdRun(&cmd)) return 1;
@@ -96,6 +98,7 @@ To have any of these take effect, you must define them _before_ including this f
  - VICLIB_NO*: If you want to remove parts of the library:
    - VICLIB_NO_TEMP_ARENA: remove ArenaTemp
    - VICLIB_NO_FILE_IO: remove any file IO functions. Useful for when you already have some other library that does file IO (for example SDL -> SDL_LoadFile)
+   - VICLIB_NO_PLATFORM: remove any platform-dependent code. This will remove a lot of stuff and is not allowed when using vl_build.h since it depends on it
    - VICLIB_NO_SORT: remove Sort and all functions used by it
 Check ErrorNumber when errors occur.
 
