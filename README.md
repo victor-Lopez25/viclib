@@ -49,7 +49,7 @@ int main()
     char *file = "somefile.txt";
     size_t filesize;
     // since stdio.h and stdlib.h have been included before viclib.h, this will call the stdlib version of ReadEntireFile
-    char *data = ReadEntireFile(file, &filesize);
+    char *data = ReadEntireFile(file, &filesize, &ArenaTemp);
     if(!data) {
         fprintf(stderr, "Could not read file '%s': %d\n", file, ErrorNumber); // ErrorNumber is defined in viclib.h
         return 1;
