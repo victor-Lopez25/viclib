@@ -73,7 +73,7 @@ VLIBPROC void fd_Close(vl_fd fd);
 #endif
 
 #ifndef PRINT_TIME_Fmt
-# define PRINT_TIME_Fmt "%llumins %02usecs %03u.%03u%03ums"
+# define PRINT_TIME_Fmt U64_Fmt"mins %02usecs %03u.%03u%03ums"
 #endif
 
 #ifndef PRINT_TIME_Arg

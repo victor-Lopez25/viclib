@@ -253,6 +253,12 @@ typedef uint32_t b32;
 typedef float    f32;
 typedef double   f64;
 
+#if COMPILER_CL
+# define U64_Fmt "%llu"
+#else
+# define U64_Fmt "%lu"
+#endif
+
 // TODO: Print for different platforms
 
 #if !defined(AssertAlways) || !defined(AssertMsgAlways)
