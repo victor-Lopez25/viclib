@@ -355,8 +355,14 @@ struct compiler_info_opts {
 
 #if OS_WINDOWS
 # define VL_EXE_EXTENSION ".exe"
+# define VL_DLL_EXT ".dll"
 #else
 # define VL_EXE_EXTENSION
+# if __APPLE__
+#  define VL_DLL_EXT ".dynlib"
+# else
+#  define VL_DLL_EXT ".so"
+# endif
 #endif
 
 VLIBPROC void VL_cc_Opt(struct compiler_info_opts opt);
