@@ -8,12 +8,6 @@
 #define VICLIB_IMPLEMENTATION
 #include "../viclib.h"
 
-#if COMPILER_CL
-# define S64_Fmt "%lld"
-#else
-# define S64_Fmt "%ld"
-#endif
-
 void TestViewStrs()
 {
     view T1 = VIEW_STATIC("1020");

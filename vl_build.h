@@ -25,11 +25,13 @@
 # define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <direct.h>
+#include <io.h>
 typedef HANDLE vl_proc;
 # define VL_INVALID_PROC INVALID_HANDLE_VALUE
 typedef HANDLE vl_fd;
 # define VL_INVALID_FD INVALID_HANDLE_VALUE
 #else
+
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
@@ -331,19 +333,27 @@ extern vl_needrebuild_context VL_needsRebuildContext;
 #define VL_Needs_C_Rebuild(out, in, ...) VL_Needs_C_Rebuild_Impl(out, ((const char*[]){in, __VA_ARGS__}), sizeof((const char*[]){in, __VA_ARGS__})/sizeof(const char*))
 VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input_paths, size_t input_paths_count);
 
+// 0 is default so if none is chosen, use the current compiler
 typedef enum {
-    // 0 is default so if none is chosen, use the current compiler
 #if COMPILER_GCC
     CCompiler_GCC = 0,
     CCompiler_Clang,
     CCompiler_MSVC,
+    CCompiler_TCC,
 #elif COMPILER_CLANG
     CCompiler_Clang = 0,
     CCompiler_GCC,
     CCompiler_MSVC,
+    CCompiler_TCC,
 #elif COMPILER_CL
     CCompiler_MSVC = 0,
     CCompiler_Clang,
+    CCompiler_GCC,
+    CCompiler_TCC,
+#elif COMPILER_TCC
+    CCompiler_TCC = 0,
+    CCompiler_Clang,
+    CCompiler_MSVC,
     CCompiler_GCC,
 #endif
 } vl_c_compiler;
@@ -389,20 +399,38 @@ VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, si
 VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpath);
 #define VL_ccLibpath(Cmd, libpath, ...) VL_ccLibpath_Opt((struct compiler_info_opts){.cmd = (Cmd), __VA_ARGS__}, libpath)
 
-#if defined(_WIN32)
-# if defined(_MSC_VER)
+#if OS_WINDOWS
+# if COMPILER_CL
 #  define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "cl.exe", "-nologo", "-FC", "-GR-", "-EHa", temp_sprintf("/Fe:%s", bin_path), src_path, "-W4", "-D_CRT_SECURE_NO_WARNINGS"
 #  define VL_CC_DEBUG_INFO "-Zi"
-# elif defined(__GNUC__)
-#  define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "gcc", "-o", bin_path, src_path, "-Wall", "-Wextra"
-#  define VL_CC_DEBUG_INFO "-g"
-# elif defined(__clang__)
-#  define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "clang", "-o", bin_path, src_path, "-Wall", "-Wextra"
+# elif COMPILER_GCC
+#  if defined(__cplusplus)
+#   define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "gcc", "-x", "c++", "-o", bin_path, src_path, "-Wall", "-Wextra"
+#   define VL_CC_DEBUG_INFO "-g"
+#  else
+#   define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "gcc", "-x", "c", "-o", bin_path, src_path, "-Wall", "-Wextra"
+#   define VL_CC_DEBUG_INFO "-g"
+#  endif
+# elif COMPILER_CLANG
+#  if defined(__cplusplus)
+#   define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "clang", "-x", "c++", "-o", bin_path, src_path, "-Wall", "-Wextra"
+#   define VL_CC_DEBUG_INFO "-g"
+#  else
+#   define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "clang", "-x", "c", "-o", bin_path, src_path, "-Wall", "-Wextra"
+#   define VL_CC_DEBUG_INFO "-g"
+#  endif
+# elif COMPILER_TCC
+#  define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "tcc", "-o", bin_path, src_path, "-Wall", "-Wextra"
 #  define VL_CC_DEBUG_INFO "-g"
 # endif
 #else
-# define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "cc", "-o", bin_path, src_path, "-Wall", "-Wextra"
-# define VL_CC_DEBUG_INFO "-g"
+# if defined(__cplusplus)
+#  define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "cc", "-x", "c++", "-o", bin_path, src_path, "-Wall", "-Wextra"
+#  define VL_CC_DEBUG_INFO "-g"
+# else
+#  define VL_DEFAULT_REBUILD_URSELF(bin_path, src_path) "cc", "-x", "c", "-o", bin_path, src_path, "-Wall", "-Wextra"
+#  define VL_CC_DEBUG_INFO "-g"
+# endif
 #endif
 
 #ifndef VL_REBUILD_URSELF
@@ -1123,6 +1151,7 @@ VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt)
     vl_fd fdin = VL_INVALID_FD;
     vl_fd fdout = VL_INVALID_FD;
     vl_fd fderr = VL_INVALID_FD;
+    vl_proc proc = VL_INVALID_PROC;
     vl_fd *optFdin = 0;
     vl_fd *optFdout = 0;
     vl_fd *optFderr = 0;
@@ -1159,7 +1188,7 @@ VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt)
         if(fderr == VL_INVALID_FD) VL_ReturnDefer(false);
         optFderr = &fderr;
     }
-    vl_proc proc = VL__CmdStartProcess(*opt.cmd, optFdin, optFdout, optFderr);
+    proc = VL__CmdStartProcess(*opt.cmd, optFdin, optFdout, optFderr);
 
     if(opt.async) {
         if(proc == VL_INVALID_PROC) VL_ReturnDefer(false);
@@ -1568,11 +1597,11 @@ VLIBPROC char *VL_temp_DirName(const char *path)
     // Stolen from the musl's implementation of dirname.
     // We are implementing our own one because libc vendors cannot agree on whether dirname(3)
     // modifies the path or not.
-    if(!path || !*path) return ".";
+    if(!path || !*path) return temp_strndup(".", 1);
     size_t i = strlen(path) - 1;
-    for(; path[i] == '/'; i--) if(!i) return "/";
-    for(; path[i] != '/'; i--) if(!i) return ".";
-    for(; path[i] == '/'; i--) if(!i) return "/";
+    for(; path[i] == '/'; i--) if(!i) return temp_strndup("/", 1);
+    for(; path[i] != '/'; i--) if(!i) return temp_strndup(".", 1);
+    for(; path[i] == '/'; i--) if(!i) return temp_strndup("/", 1);
     return temp_strndup(path, i + 1);
 #else
     if(!path) path = ""; // Treating NULL as empty.
@@ -1591,7 +1620,7 @@ VLIBPROC char *VL_temp_FileName(const char *path)
     // Stolen from the musl's implementation of dirname.
     // We are implementing our own one because libc vendors cannot agree on whether basename(3)
     // modifies the path or not.
-    if(!path || !*path) return ".";
+    if(!path || !*path) return temp_strndup(".", 1);
     size_t i = strlen(path)-1;
     char *s = temp_strndup(path, i);
     for(; i&&s[i]=='/'; i--) s[i] = 0;
@@ -1627,7 +1656,7 @@ VLIBPROC char *VL_temp_RunningExecutablePath(void)
 #if defined(__linux__)
     char buf[4096];
     int length = readlink("/proc/self/exe", buf, ArrayLen(buf));
-    if(length < 0) return "";
+    if(length < 0) return temp_strndup("", 0);
     return temp_strndup(buf, length);
 #elif defined(_WIN32)
     char buf[MAX_PATH];
@@ -1636,12 +1665,25 @@ VLIBPROC char *VL_temp_RunningExecutablePath(void)
 #elif defined(__APPLE__)
     char buf[4096];
     uint32_t size = ArrayLen(buf);
-    if(_NSGetExecutablePath(buf, &size) != 0) return "";
+    if(_NSGetExecutablePath(buf, &size) != 0) return temp_strndup("", 0);
     int length = strlen(buf);
     return temp_strndup(buf, length);
+#elif defined(__FreeBSD__)
+    char buf[4096];
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
+    size_t length = sizeof(buf);
+    if(sysctl(mib, 4, buf, &length, NULL, 0) < 0) return temp_strndup("", 0);
+    return temp_strndup(buf, length);
+#elif defined(__HAIKU__)
+    int cookie = 0;
+    image_info info;
+    while(get_next_image_info(B_CURRENT_TEAM, &cookie, &info) == B_OK) {
+        if(info.type == B_APP_IMAGE) break;
+    }
+    return temp_strdup(info.name);
 #else
     fprintf(stderr, LOC_STR": TODO: %s is not implemented for this platform\n", __FUNCTION__);
-    return "";
+    return temp_strndup("", 0);
 #endif
 }
 

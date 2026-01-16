@@ -73,7 +73,7 @@ SOFTWARE.
 # define OS_WINDOWS 1
 #endif
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(__clang__)
 # define COMPILER_CL 1
 # define PRAGMA(x) __pragma(x)
 # define thread_local __declspec(thread)
@@ -85,6 +85,13 @@ SOFTWARE.
 # define COMPILER_GCC 1
 # define PRAGMA(x) _Pragma(#x)
 # define thread_local __thread
+#elif defined(__TINYC__)
+# define COMPILER_TCC 1
+# define PRAGMA(x) _Pragma(#x)
+// NOTE: tcc doesn't support thread-local storage
+// TODO: thread local storage using win32/unistd?
+//       using VL_Init() to start it up?
+# define thread_local 
 #else
 /* unsupported compiler, to support, define:
  necessary:
@@ -253,10 +260,12 @@ typedef uint32_t b32;
 typedef float    f32;
 typedef double   f64;
 
-#if COMPILER_CL
+#if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
 # define U64_Fmt "%llu"
+# define S64_Fmt "%lld"
 #else
 # define U64_Fmt "%lu"
+# define S64_Fmt "%ld"
 #endif
 
 // TODO: Print for different platforms

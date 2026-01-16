@@ -28,11 +28,7 @@ void TestReadFileChunk(void)
         ReadFileChunk(&Chunk, "../src/test_windows.c", &ChunkSize);
         ChunkIdx++)
     {
-#if COMPILER_CL
-        printf("Chunk %lld: %.*s\n", ChunkIdx, ChunkSize, tmpBuffer);
-#else
-	printf("Chunk %ld: %.*s\n", ChunkIdx, ChunkSize, tmpBuffer);
-#endif
+        printf("Chunk "U64_Fmt": %.*s\n", ChunkIdx, ChunkSize, tmpBuffer);
     }
     if(ErrorNumber != 0) {
         printf("Error: %d\n", ErrorNumber);
