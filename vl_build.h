@@ -1699,6 +1699,9 @@ VLIBPROC void VL_cc_Opt(struct compiler_info_opts opt)
         case CCompiler_MSVC: {
             cmd_Append(opt.cmd, "cl.exe");
         } break;
+        case CCompiler_TCC: {
+            cmd_Append(opt.cmd, "tcc");
+        } break;
     }
 }
 
@@ -1706,6 +1709,7 @@ VLIBPROC void VL_ccWarnings_Opt(struct compiler_info_opts opt)
 {
     switch(opt.cc) {
         case CCompiler_GCC:
+        case CCompiler_TCC:
         case CCompiler_Clang: {
             cmd_Append(opt.cmd, "-Wall", "-Wextra");
         } break;
@@ -1719,6 +1723,7 @@ VLIBPROC void VL_ccWarningsAsErrors_Opt(struct compiler_info_opts opt)
 {
     switch(opt.cc) {
         case CCompiler_GCC:
+        case CCompiler_TCC:
         case CCompiler_Clang: {
             cmd_Append(opt.cmd, "-Werror");
         } break;
@@ -1733,6 +1738,7 @@ VLIBPROC void VL_ccOutput_Opt(struct compiler_info_opts opt, const char *output)
     Assert(output);
     switch(opt.cc) {
         case CCompiler_GCC:
+        case CCompiler_TCC:
         case CCompiler_Clang: {
             cmd_Append(opt.cmd, "-o", output);
         } break;
@@ -1746,6 +1752,7 @@ VLIBPROC void VL_ccDebug_Opt(struct compiler_info_opts opt)
 {
     switch(opt.cc) {
         case CCompiler_GCC:
+        case CCompiler_TCC:
         case CCompiler_Clang: {
             cmd_Append(opt.cmd, "-g");
         } break;
@@ -1767,6 +1774,7 @@ VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, si
     for(size_t i = 0; i < libcount; i++) {
         switch(opt.cc) {
             case CCompiler_GCC:
+            case CCompiler_TCC:
             case CCompiler_Clang: {
                 cmd_Append(opt.cmd, "-l", libs[i]);
             } break;
@@ -1788,6 +1796,7 @@ VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpat
 
     switch(opt.cc) {
         case CCompiler_GCC:
+        case CCompiler_TCC:
         case CCompiler_Clang: {
             cmd_Append(opt.cmd, "-L", libpath);
         } break;
