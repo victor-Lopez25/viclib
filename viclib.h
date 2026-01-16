@@ -260,6 +260,7 @@ typedef uint32_t b32;
 typedef float    f32;
 typedef double   f64;
 
+// Any windows compiler
 #if defined(_MSC_VER) || defined(__MINGW32__) || defined(__MINGW64__)
 # define U64_Fmt "%llu"
 # define S64_Fmt "%lld"
