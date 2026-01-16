@@ -59,7 +59,6 @@ int main()
     return 0;
 }
 ```
-What if you didn't include `stdio.h` and `stdlib.h`? ReadEntireFile would become an assert(false) with a message saying you need to include some file api.
 
 vl_build.h:
 ```c
