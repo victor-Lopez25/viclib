@@ -699,21 +699,57 @@ VIEWPROC bool view_StartsWith(view v, view start)
 
 VIEWPROC const char *view_Contains(view haystack, view needle)
 {
-    if(needle.count > haystack.count) return 0;
+    if(needle.count == 0) return haystack.items;
+    if(needle.count > haystack.count) return (const char*)0;
     else if(needle.count == haystack.count) {
         return mem_compare(haystack.items, needle.items, haystack.count) == 0 ?
             haystack.items : 0;
     }
-    
-    // TODO: IMPORTANT: Do this with a string-search algorithm which requires memory, but is O(n+m)
-    // NOTE: I can probably still do this O(n^2) when working with a small haystack (~5000 characters or less?)
-    // NOTE: wiki: https://en.wikipedia.org/wiki/Two-way_string-matching_algorithm
-    for(size_t i = 0; i < haystack.count - needle.count; i++)
-    {
-        if(mem_compare(haystack.items + i, needle.items, needle.count) == 0)
-            return haystack.items + i;
+
+    size_t i = 0;
+    for(; i < haystack.count && haystack.items[i] != needle.items[0]; i++);
+    if(i == haystack.count || needle.count == 1) return (const char*)0;
+    haystack.items += i;
+    haystack.count -= i;
+    if(haystack.count < needle.count) return (const char*)0;
+
+    // Stolen from the musl's implementation of memmem
+    switch(needle.count) {
+        case 2: {
+            // twobyte_memmem
+            uint16_t nw = needle.items[0] << 8 | needle.items[1];
+            uint16_t hw = haystack.items[0] << 8 | haystack.items[1];
+            for (haystack.items += 2, haystack.count -= 2; haystack.count; haystack.count--, hw = hw << 8 | *haystack.items++)
+                if(hw == nw) return (const char*)(haystack.items - 2);
+            return hw == nw ? (const char*)(haystack.items - 2) : (const char*)0;
+        } break;
+
+        case 3: {
+            // threebyte_memmem
+            uint32_t nw = (uint32_t)needle.items[0] << 24 | needle.items[1] << 16 | needle.items[2] << 8;
+            uint32_t hw = (uint32_t)haystack.items[0] << 24 | haystack.items[1] << 16 | haystack.items[2] << 8;
+            for (haystack.items += 3, haystack.count -= 3; haystack.count; haystack.count--, hw = (hw | *haystack.items++) << 8)
+                if (hw == nw) return (const char*)(haystack.items - 3);
+            return hw == nw ? (const char*)(haystack.items - 3) : (const char*)0;
+        } break;
+
+        case 4: {
+            // fourbyte_memmem
+            uint32_t nw = (uint32_t)needle.items[0] << 24 | needle.items[1] << 16 | needle.items[2] << 8 | needle.items[3];
+            uint32_t hw = (uint32_t)haystack.items[0] << 24 | haystack.items[1] << 16 | haystack.items[2] << 8 | haystack.items[3];
+            for (haystack.items += 4, haystack.count -= 4; haystack.count; haystack.count--, hw = hw << 8 | *haystack.items++)
+                if (hw == nw) return (const char*)(haystack.items - 4);
+            return hw == nw ? (const char*)(haystack.items - 4) : (const char*)0;
+        } break;
     }
-    return 0;
+
+    // twoway_memmem
+    // TODO
+    for(size_t i = 0; i < haystack.count - needle.count; i++) {
+        if(mem_compare(haystack.items + i, needle.items, needle.count) == 0)
+            return (const char*)(haystack.items + i);
+    }
+    return (const char*)0;
 }
 
 VIEWPROC bool view_ContainsCharacter(view v, char c)
@@ -806,8 +842,7 @@ VIEWPROC view view_ChopByView(view *v, view delim)
 {
     view Window = view_FromParts((const char*)v->items, delim.count);
     size_t i = 0;
-    for(;i + delim.count < v->count && !view_Eq(Window, delim);)
-    {
+    for(; i + delim.count < v->count && !view_Eq(Window, delim);) {
         i++;
         Window.items++;
     }
@@ -910,8 +945,7 @@ VIEWPROC bool view_ParseS64(view v, s64 *result, view *remaining)
 
     s64 Value = 0;
     int j = 0;
-    for(; j < (int)v.count; j++)
-    {
+    for(; j < (int)v.count; j++) {
         char c = v.items[j];
         if(c != '_') {
             Digit = _digit_val((int)c);
@@ -968,8 +1002,7 @@ int view_ParseF64(view v, f64 *result, view *remaining)
     bool FoundExponent = false;
     view ExponentStr;
     size_t j = 0;
-    for(; j < v.count; j++)
-    {
+    for(; j < v.count; j++) {
         char c = v.items[j];
         if(c == '.') {
             DecimalPart = true;
@@ -1003,8 +1036,7 @@ int view_ParseF64(view v, f64 *result, view *remaining)
             
             FoundExponent = true;
             size_t ExpEnd = 0;
-            for(; ExpEnd < ExponentStr.count; ExpEnd++)
-            {
+            for(; ExpEnd < ExponentStr.count; ExpEnd++) {
                 if(ExponentStr.items[ExpEnd] > '9' || ExponentStr.items[ExpEnd] < '0') break;
             }
 
@@ -1013,8 +1045,7 @@ int view_ParseF64(view v, f64 *result, view *remaining)
             if(ExpNeg) {
                 for(int k = 0; k < charVal; k++) Val /= ExpMultiplier;
                 ExpMultiplier = 10000000000.0;
-                for(s64 k = (s64)ExpEnd - 2; k >= 0; k--)
-                {
+                for(s64 k = (s64)ExpEnd - 2; k >= 0; k--) {
                     charVal = ExponentStr.items[k] - '0';
                     for(int l = 0; l < charVal; l++) Val /= ExpMultiplier;
                     ExpMultiplier *= 10000000000.0;
@@ -1022,8 +1053,7 @@ int view_ParseF64(view v, f64 *result, view *remaining)
             } else {
                 for(int k = 0; k < charVal; k++) Val *= ExpMultiplier;
                 ExpMultiplier = 10000000000.0;
-                for(s64 k = (s64)ExpEnd - 2; k >= 0; k--)
-                {
+                for(s64 k = (s64)ExpEnd - 2; k >= 0; k--) {
                     charVal = ExponentStr.items[k] - '0';
                     for(int l = 0; l < charVal; l++) Val *= ExpMultiplier;
                     ExpMultiplier *= 10000000000.0;
@@ -1106,7 +1136,7 @@ VLIBPROC void mem_copy(void *dst, const void *src, size_t len)
             s = (const u8*)wideSrc;
         }
 #endif
-		for (; len; len--) *d++ = *s++;
+		for(; len; len--) *d++ = *s++;
     } else {
 #if COMPILER_GCC
 		if((uintptr_t)s % sizeof(size_t) == (uintptr_t)d % sizeof(size_t)) {
@@ -1148,11 +1178,10 @@ VLIBPROC void mem_zero(void *data, size_t len)
 
 VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
 {
-    register const unsigned char *s1 = (const unsigned char*)str1;
-    register const unsigned char *s2 = (const unsigned char*)str2;
+    const unsigned char *s1 = (const unsigned char*)str1;
+    const unsigned char *s2 = (const unsigned char*)str2;
 
-    for(;count-- > 0;)
-    {
+    for(;count-- > 0;) {
         if(*s1++ != *s2++)
             return s1[-1] < s2[-1] ? -1 : 1;
     }
@@ -1364,8 +1393,7 @@ bool IsDebuggerPresent(void)
     if (!tracer_pid_ptr)
         return false;
     
-    for (const char* characterPtr = tracer_pid_ptr + sizeof(tracerPidString) - 1; characterPtr <= buf + num_read; ++characterPtr)
-    {
+    for(const char* characterPtr = tracer_pid_ptr + sizeof(tracerPidString) - 1; characterPtr <= buf + num_read; ++characterPtr) {
         if (isspace(*characterPtr))
             continue;
         else
