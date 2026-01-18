@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.5.6
+--version: 1.6.0
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -375,8 +375,13 @@ VIEWPROC view view_Slice(view v, size_t start, size_t end); // won't include end
 VIEWPROC int  view_Compare(view a, view b); // result = A - B
 VIEWPROC bool view_Eq(view a, view b);
 VIEWPROC bool view_StartsWith(view v, view start);
-VIEWPROC const char *view_Contains(view haystack, view needle); // result = pointer to where the needle is in haystack or null
-VIEWPROC bool view_ContainsCharacter(view v, char c);
+// Chops start from v when it gets found
+VIEWPROC bool view_ChopStartsWith(view *v, view start);
+VIEWPROC const char *view_Find(view haystack, view needle); // result = pointer to where the needle is in haystack or null
+// If the needle gets found, chop the haystack until the first ocurrence of needle in haystack
+VIEWPROC bool view_FindChop(view *haystack, view needle, view *chopped);
+VIEWPROC bool view_FindCharacter(view v, char c, size_t *n);
+VIEWPROC bool view_FindChopCharacter(view *v, char c, view *chopped);
 #define view_EndWith view_EndsWith /* in case of singular/plural annoyance */
 VIEWPROC bool view_EndsWith(view v, view end);
 VIEWPROC view view_ChopByDelim(view *v, char delim);
@@ -697,7 +702,17 @@ VIEWPROC bool view_StartsWith(view v, view start)
     else return view_Eq(view_FromParts(v.items, start.count), start);
 }
 
-VIEWPROC const char *view_Contains(view haystack, view needle)
+VIEWPROC bool view_ChopStartsWith(view *v, view start)
+{
+    bool found = view_StartsWith(*v, start);
+    if(found) {
+        v->items += start.count;
+        v->count -= start.count;
+    }
+    return found;
+}
+
+VIEWPROC const char *view_Find(view haystack, view needle)
 {
     if(needle.count == 0) return haystack.items;
     if(needle.count > haystack.count) return (const char*)0;
@@ -745,19 +760,54 @@ VIEWPROC const char *view_Contains(view haystack, view needle)
 
     // twoway_memmem
     // TODO
-    for(size_t i = 0; i < haystack.count - needle.count; i++) {
+    for(i = 0; i < haystack.count - needle.count; i++) {
         if(mem_compare(haystack.items + i, needle.items, needle.count) == 0)
             return (const char*)(haystack.items + i);
     }
     return (const char*)0;
 }
 
-VIEWPROC bool view_ContainsCharacter(view v, char c)
+VIEWPROC bool view_FindChop(view *haystack, view needle, view *chopped)
 {
-    for(size_t i = 0; i < v.count; i++) {
-        if(v.items[i] == c) return true;
+    const char *s = view_Find(*haystack, needle);
+    if(s) {
+        size_t count = s - haystack->items;
+        if(chopped) {
+            chopped->items = haystack->items;
+            chopped->count = count;
+        }
+        haystack->items = s + needle.count;
+        haystack->count -= count + needle.count;
+        return true;
     }
     return false;
+}
+
+VIEWPROC bool view_FindCharacter(view v, char c, size_t *n)
+{
+    for(size_t i = 0; i < v.count; i++) {
+        if(v.items[i] == c) {
+            if(n) *n = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+VIEWPROC bool view_FindChopCharacter(view *v, char c, view *chopped)
+{
+    size_t count;
+    bool found = view_FindCharacter(*v, c, &count);
+    if(found) {
+        if(chopped) {
+            chopped->items = v->items;
+            chopped->count = count;
+        }
+        // skip the character
+        v->items = v->items + count + 1;
+        v->count -= count + 1;
+    }
+    return found;
 }
 
 VIEWPROC bool view_EndsWith(view v, view end)
