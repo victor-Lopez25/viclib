@@ -1485,7 +1485,7 @@ VLIBPROC file_type VL_GetFileType(const char *path)
     DWORD attr = GetFileAttributesA(path);
     if(attr == INVALID_FILE_ATTRIBUTES) return VL_FILE_INVALID;
     if(attr & FILE_ATTRIBUTE_DIRECTORY) return VL_FILE_DIRECTORY;
-    // TODO: detect symlinks on Windows (whatever that means on Windows anyway)
+    if(attr & FILE_ATTRIBUTE_REPARSE_POINT) return VL_FILE_SYMLINK;
     return VL_FILE_REGULAR;
 #elif OS_LINUX || OS_MAC
     struct stat statbuf;
