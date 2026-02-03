@@ -12,7 +12,7 @@ Defines: To have any of these take effect, you must define them _before_ includi
  - VICLIB_NO*: If you want to remove parts of the library:
    - VICLIB_NO_TEMP_ARENA: remove ArenaTemp
    - VICLIB_NO_SORT: remove Sort and all functions used by it
-Check ErrorNumber when errors occur.
+Check VL_ErrorNumber when errors occur.
 
 --Many thanks to the inspirations for this library:
  - Mr4th's 4ed_base_types.h - https://mr-4th.itch.io/4coder (find the file in 'custom' directory)
@@ -304,7 +304,19 @@ typedef double   f64;
 # define AssertMsg(expr, msg) AssertMsgAlways(expr, msg)
 #endif
 
-thread_local u32 ErrorNumber = 0;
+typedef enum {
+    ERROR_NO_ERROR = 0,
+
+    ERROR_READ_UNKNOWN,
+    ERROR_WRITE_UNKNOWN,
+    ERROR_READ_FILE_NOT_FOUND,
+    ERROR_WRITE_PATH_NOT_FOUND,
+    ERROR_FILE_ACCESS_DENIED,
+    ERROR_NO_MEM,
+    ERROR_READ_FILE_TOO_BIG, /* READ_ENTIRE_FILE_MAX exceeded */
+} error_number_value;
+
+thread_local error_number_value VL_ErrorNumber = 0;
 
 #ifndef VLIBPROC
 # define VLIBPROC
@@ -548,14 +560,7 @@ VLIBPROC bool VL_Init(void);
 
 #if !defined(VICLIB_NO_PLATFORM)
 
-#define ERROR_READ_UNKNOWN 1
-#define ERROR_READ_FILE_NOT_FOUND 2
-#define ERROR_WRITE_PATH_NOT_FOUND 3
-#define ERROR_FILE_ACCESS_DENIED 4
-#define ERROR_READ_NO_MEM 5
-#define ERROR_READ_FILE_TOO_BIG 6 // READ_ENTIRE_FILE_MAX exceeded
-
-#define ERROR_WRITE_UNKNOWN 1
+#define VL_HadError() (VL_ErrorNumber != ERROR_NO_ERROR)
 
 #ifndef READ_ENTIRE_FILE_MAX
 #define READ_ENTIRE_FILE_MAX 0xFFFFFFFF
@@ -602,6 +607,9 @@ VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size);
 VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size);
 
 #endif // !defined(VICLIB_NO_FILE_IO)
+
+VLIBPROC const char *VL_GetError(void);
+
 #endif // !defined(VICLIB_NO_PLATFORM)
 
 // TODO(vic): I think the sort doesn't work 100% of the time? test this
@@ -1524,8 +1532,8 @@ VLIBPROC u64 VL_GetNanos(void)
 PUSH_IGNORE_UNINITIALIZED
 VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size)
 {
+    VL_ErrorNumber = ERROR_NO_ERROR;
 #if OS_WINDOWS
-    ErrorNumber = 0;
     AssertMsg(Size != 0, "Size parameter must be a valid pointer");
     char *result = 0;
     HANDLE FileHandle = CreateFileA(File, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
@@ -1535,31 +1543,31 @@ VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size)
         switch(Error) {
             case ERROR_INVALID_DRIVE: fallthrough;
             case ERROR_PATH_NOT_FOUND: fallthrough;
-            case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
-            case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
+            case ERROR_FILE_NOT_FOUND: VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
+            case ERROR_ACCESS_DENIED: VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
 
-            default: ErrorNumber = ERROR_READ_UNKNOWN; break;
+            default: VL_ErrorNumber = ERROR_READ_UNKNOWN; break;
         }
     }
 
     LARGE_INTEGER FileSize;
     if(ok) {
         ok = (bool)GetFileSizeEx(FileHandle, &FileSize);
-        if(!ok) ErrorNumber = ERROR_READ_UNKNOWN;
+        if(!ok) VL_ErrorNumber = ERROR_READ_UNKNOWN;
     }
 
     u64 Limit = READ_ENTIRE_FILE_MAX;
 
     if(ok) {
         ok = (u64)FileSize.QuadPart <= Limit;
-        if(!ok) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+        if(!ok) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
     }
     u32 FileSizeU32 = (u32)FileSize.QuadPart;
 
     size_t arenaMark = Arena->used;
     if(ok) {
         if(ArenaGetRemaining(Arena) < (size_t)FileSize.QuadPart) {
-            ErrorNumber = ERROR_READ_NO_MEM;
+            VL_ErrorNumber = ERROR_NO_MEM;
             ok = false;
         } else {
             result = ArenaPushSize(Arena, FileSize.QuadPart);
@@ -1572,7 +1580,7 @@ VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size)
         {
             *Size = FileSize.QuadPart;
         } else {
-            ErrorNumber = ERROR_READ_UNKNOWN;
+            VL_ErrorNumber = ERROR_READ_UNKNOWN;
             mem_zero(Arena->base + arenaMark, Arena->used - arenaMark);
             Arena->used = arenaMark;
         }
@@ -1580,29 +1588,28 @@ VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size)
 
     CloseHandle(FileHandle);
 #elif OS_LINUX || OS_MAC
-    ErrorNumber = 0;
     char *result = 0;
     int fd = open(File, O_RDONLY);
     if(fd == -1) {
-        if(errno == EACCES || errno == EPERM) ErrorNumber = ERROR_FILE_ACCESS_DENIED;
-        else if(errno == ENOMEM) ErrorNumber = ERROR_READ_NO_MEM;
-        else if(errno == EOVERFLOW) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+        if(errno == EACCES || errno == EPERM) VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED;
+        else if(errno == ENOMEM) VL_ErrorNumber = ERROR_NO_MEM;
+        else if(errno == EOVERFLOW) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
         else if(errno == EBADF || errno == ENOENT)
-            ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-        else ErrorNumber = ERROR_READ_UNKNOWN;
+            VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
+        else VL_ErrorNumber = ERROR_READ_UNKNOWN;
         return 0;
     }
 
     struct stat stat;
     if(fstat(fd, &stat) == -1) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
+        VL_ErrorNumber = ERROR_READ_UNKNOWN;
         close(fd);
         return 0;
     }
 
     size_t arenaMark = Arena->used;
     if(ArenaGetRemaining(Arena) < (size_t)stat.st_size) {
-        ErrorNumber = ERROR_READ_NO_MEM;
+        VL_ErrorNumber = ERROR_NO_MEM;
         close(fd);
         return 0;
     } else {
@@ -1611,7 +1618,7 @@ VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size)
 
     ssize_t bytesRead = read(fd, result, stat.st_size);
     if(bytesRead != stat.st_size) {
-        ErrorNumber = ERROR_READ_UNKNOWN;
+        VL_ErrorNumber = ERROR_READ_UNKNOWN;
         close(fd);
         mem_zero(Arena->base + arenaMark, Arena->used - arenaMark);
         Arena->used = arenaMark;
@@ -1631,7 +1638,7 @@ RESTORE_WARNINGS
 bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
 {
     AssertMsg(Chunk->Buffer && Chunk->BufferSize, "Requires a valid buffer and a buffer size");
-    ErrorNumber = 0;
+    VL_ErrorNumber = 0;
 
 #if OS_WINDOWS
     if(!Chunk->File) {
@@ -1641,17 +1648,18 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
             switch(Error) {
                 case ERROR_INVALID_DRIVE: fallthrough;
                 case ERROR_PATH_NOT_FOUND: fallthrough;
-                case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
-                case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
+                case ERROR_FILE_NOT_FOUND: VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
+                case ERROR_ACCESS_DENIED: VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
 
-                default: ErrorNumber = ERROR_READ_UNKNOWN; break;
+                default: VL_ErrorNumber = ERROR_READ_UNKNOWN; break;
             }
             return false;
         }
 
         LARGE_INTEGER FileSize;
         if(GetFileSizeEx(Chunk->File, &FileSize) == 0) {
-            ErrorNumber = ERROR_READ_UNKNOWN; // TODO: find out why it failed
+            // NOTE: Shouldn't fail if CreateFile didn't fail
+            VL_ErrorNumber = ERROR_READ_UNKNOWN;
             return false;
         }
 
@@ -1668,7 +1676,7 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
     {
         *ChunkSize = (u32)OutSize;
     } else {
-        ErrorNumber = ERROR_READ_UNKNOWN;
+        VL_ErrorNumber = ERROR_READ_UNKNOWN;
         return false;
     }
 
@@ -1677,18 +1685,18 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
         Chunk->didFirstIteration = true;
         Chunk->fd = open(File, O_RDONLY);
         if(Chunk->fd == -1) {
-            if(errno == EACCES || errno == EPERM) ErrorNumber = ERROR_FILE_ACCESS_DENIED;
-            else if(errno == ENOMEM) ErrorNumber = ERROR_READ_NO_MEM;
-            else if(errno == EOVERFLOW) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+            if(errno == EACCES || errno == EPERM) VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED;
+            else if(errno == ENOMEM) VL_ErrorNumber = ERROR_NO_MEM;
+            else if(errno == EOVERFLOW) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
             else if(errno == EBADF || errno == ENOENT)
-                ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-            else ErrorNumber = ERROR_READ_UNKNOWN;
+                VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
+            else VL_ErrorNumber = ERROR_READ_UNKNOWN;
             return false;
         }
 
         struct stat stat;
         if(fstat(Chunk->fd, &stat) == -1) {
-            ErrorNumber = ERROR_READ_UNKNOWN;
+            VL_ErrorNumber = ERROR_READ_UNKNOWN;
             close(Chunk->fd);
             return false;
         }
@@ -1706,7 +1714,7 @@ bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
     if(OutSize == (size_t)read(Chunk->fd, Chunk->Buffer, OutSize)) {
         *ChunkSize = (u32)OutSize;
     } else {
-        ErrorNumber = ERROR_READ_UNKNOWN;
+        VL_ErrorNumber = ERROR_READ_UNKNOWN;
         return false;
     }
 #else
@@ -1730,10 +1738,10 @@ VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
         switch(Error) {
             case ERROR_INVALID_DRIVE: fallthrough;
             case ERROR_PATH_NOT_FOUND: fallthrough;
-            case ERROR_FILE_NOT_FOUND: ErrorNumber = ERROR_WRITE_PATH_NOT_FOUND; break;
-            case ERROR_ACCESS_DENIED: ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
+            case ERROR_FILE_NOT_FOUND: VL_ErrorNumber = ERROR_WRITE_PATH_NOT_FOUND; break;
+            case ERROR_ACCESS_DENIED: VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
 
-            default: ErrorNumber = ERROR_WRITE_UNKNOWN;
+            default: VL_ErrorNumber = ERROR_WRITE_UNKNOWN;
         }
         VL_ReturnDefer(false);
     }
@@ -1745,7 +1753,7 @@ VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
     DWORD bytesWritten = 0;
     while(bytesToWriteTotal > bytesWrittenTotal) {
         if(!WriteFile(fhandle, fData, bytesToWriteTotal - bytesWrittenTotal, &bytesWritten, 0)) {
-            ErrorNumber = ERROR_WRITE_UNKNOWN;
+            VL_ErrorNumber = ERROR_WRITE_UNKNOWN;
             VL_ReturnDefer(false);
         }
         bytesWrittenTotal += bytesWritten;
@@ -1759,13 +1767,13 @@ defer:
 #elif OS_LINUX || OS_MAC
     int fd = open(File, O_CREAT | O_WRONLY | O_TRUNC);
     if(fd == -1) {
-        if(errno == EACCES || errno == EPERM) ErrorNumber = ERROR_FILE_ACCESS_DENIED;
-        else if(errno == ENOMEM) ErrorNumber = ERROR_READ_NO_MEM;
-        else if(errno == EOVERFLOW) ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+        if(errno == EACCES || errno == EPERM) VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED;
+        else if(errno == ENOMEM) VL_ErrorNumber = ERROR_NO_MEM;
+        else if(errno == EOVERFLOW) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
         // this could happen if creating a file in a directory that doesn't exist I think?
         else if(errno == EBADF || errno == ENOENT)
-            ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-        else ErrorNumber = ERROR_READ_UNKNOWN;
+            VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
+        else VL_ErrorNumber = ERROR_READ_UNKNOWN;
         return false;
     }
 
@@ -1775,7 +1783,7 @@ defer:
     while(bytesToWriteTotal > bytesWrittenTotal) {
         ssize_t bytesWritten = write(fd, fData, bytesToWriteTotal - bytesWrittenTotal);
         if(bytesWritten == -1) {
-            ErrorNumber = ERROR_WRITE_UNKNOWN;
+            VL_ErrorNumber = ERROR_WRITE_UNKNOWN;
             VL_ReturnDefer(false);
         }
         bytesWrittenTotal += bytesWritten;
@@ -1791,6 +1799,22 @@ defer:
 }
 
 #endif // !defined(VICLIB_NO_FILE_IO)
+
+VLIBPROC const char *VL_GetError(void) {
+    switch(VL_ErrorNumber) {
+        case ERROR_READ_UNKNOWN: return "Unknown read error";
+        case ERROR_WRITE_UNKNOWN: return "Unknown write error";
+        case ERROR_READ_FILE_NOT_FOUND: return "File not found";
+        case ERROR_WRITE_PATH_NOT_FOUND: return "Path not found"; /* A directory specified to get to the file does not exist */
+        case ERROR_FILE_ACCESS_DENIED: return "Access denied";
+        case ERROR_NO_MEM: return "No remaining memory";
+        case ERROR_READ_FILE_TOO_BIG: return "File too large";
+    
+        case ERROR_NO_ERROR:
+        default: return "Unknown error";
+    }
+}
+
 #endif // !defined(VICLIB_NO_PLATFORM)
 
 #ifndef VICLIB_NO_SORT

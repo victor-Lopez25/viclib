@@ -9,9 +9,8 @@ void TestReadEntireFile(void)
     char *Data = ReadEntireFile(&ArenaTemp, "../src/test_windows.c", &Size);
     if(Data) {
         printf("%.*s\n", (int)Size, Data);
-    }
-    else {
-        printf("Error: %d\n", ErrorNumber);
+    } else {
+        printf("Error: %s\n", VL_GetError());
     }
 }
 
@@ -30,14 +29,14 @@ void TestReadFileChunk(void)
     {
         printf("Chunk "U64_Fmt": %.*s\n", ChunkIdx, ChunkSize, tmpBuffer);
     }
-    if(ErrorNumber != 0) {
-        printf("Error: %d\n", ErrorNumber);
+    if(VL_HadError()) {
+        printf("Error: %s\n", VL_GetError());
     }
 }
 
 int main()
 {
-    //TestReadEntireFile();
+    TestReadEntireFile();
     TestReadFileChunk();
 
     return 0;
