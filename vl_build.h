@@ -271,7 +271,7 @@ extern struct vl__pushd_buf_type VL__pushDirectoryBuffer;
 // "/path/to/a/file.c" -> "file.c"; "/path/to/a/directory" -> "directory"
 VLIBPROC const char *VL_PathName(const char *path);
 VLIBPROC bool VL_Rename(const char *old, const char *New);
-VLIBPROC int VL_FileExists(const char *path);
+VLIBPROC bool VL_FileExists(const char *path);
 VLIBPROC const char *VL_temp_GetCurrentDir(void);
 VLIBPROC bool VL_SetCurrentDir(const char *path);
 VLIBPROC bool VL_Pushd(const char *path);
@@ -937,7 +937,6 @@ VLIBPROC bool sb_ReadEntireFile(const char *path, string_builder *sb)
 
     fread(sb->items + sb->count, m, 1, f);
     if(ferror(f)) {
-        // TODO: Afaik, ferror does not set errno. So the error reporting in defer is not correct in this case.
         VL_Log(VL_ERROR, "Could not read file %s", path);
         fclose(f);
         return false;
@@ -1158,7 +1157,6 @@ VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt)
 
     size_t max_procs = opt.maxProcs > 0 ? opt.maxProcs : (size_t) VL_GetCountProcs() + 1;
 
-    // TODO: Async
     if(opt.async && max_procs > 0) {
         while(opt.async->count >= max_procs) {
             for(size_t i = 0; i < opt.async->count; ++i) {
@@ -1503,21 +1501,12 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
     return result;
 }
 
-/* returns: 0 - does not exist. 1 - exists. -1 - error while checking */
-VLIBPROC int VL_FileExists(const char *path)
+VLIBPROC bool VL_FileExists(const char *path)
 {
 #if _WIN32
-    // TODO: distinguish between "does not exists" and other errors
-    DWORD dwAttrib = GetFileAttributesA(path);
-    return dwAttrib != INVALID_FILE_ATTRIBUTES;
+    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
 #else
-    struct stat statbuf;
-    if(stat(path, &statbuf) < 0) {
-        if(errno == ENOENT) return 0;
-        VL_Log(VL_ERROR, "Could not check if file %s exists: %s", path, strerror(errno));
-        return -1;
-    }
-    return 1;
+    return access(file_path, F_OK) == 0;
 #endif
 }
 
