@@ -271,7 +271,6 @@ extern struct vl__pushd_buf_type VL__pushDirectoryBuffer;
 // "/path/to/a/file.c" -> "file.c"; "/path/to/a/directory" -> "directory"
 VLIBPROC const char *VL_PathName(const char *path);
 VLIBPROC bool VL_Rename(const char *old, const char *New);
-VLIBPROC bool VL_FileExists(const char *path);
 VLIBPROC const char *VL_temp_GetCurrentDir(void);
 VLIBPROC bool VL_SetCurrentDir(const char *path);
 VLIBPROC bool VL_Pushd(const char *path);
@@ -1499,15 +1498,6 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
     da_Free(sb);
 
     return result;
-}
-
-VLIBPROC bool VL_FileExists(const char *path)
-{
-#if _WIN32
-    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
-#else
-    return access(file_path, F_OK) == 0;
-#endif
 }
 
 VLIBPROC const char *VL_temp_GetCurrentDir(void)

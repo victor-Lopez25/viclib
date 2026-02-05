@@ -557,16 +557,16 @@ extern struct vl_globalcontext VL_globalContext;
 
 VLIBPROC bool VL_Init(void);
 
+#define VL_HadError() (VL_ErrorNumber != ERROR_NO_ERROR)
 
 #if !defined(VICLIB_NO_PLATFORM)
-
-#define VL_HadError() (VL_ErrorNumber != ERROR_NO_ERROR)
 
 #ifndef READ_ENTIRE_FILE_MAX
 #define READ_ENTIRE_FILE_MAX 0xFFFFFFFF
 #endif
 
 VLIBPROC bool VL_SetCurrentDir(const char *path);
+VLIBPROC bool VL_FileExists(const char *path);
 
 #if !OS_WINDOWS
 bool IsDebuggerPresent(void);
@@ -1425,6 +1425,15 @@ VLIBPROC bool VL_SetCurrentDir(const char *path)
     return chdir(path) >= 0;
 #else
 #error Unsupported
+#endif
+}
+
+VLIBPROC bool VL_FileExists(const char *path)
+{
+#if _WIN32
+    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+#else
+    return access(file_path, F_OK) == 0;
 #endif
 }
 
