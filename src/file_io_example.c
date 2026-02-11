@@ -6,7 +6,7 @@
 void TestReadEntireFile(void)
 {
     size_t Size;
-    char *Data = ReadEntireFile(&ArenaTemp, "../src/test_windows.c", &Size);
+    char *Data = ReadEntireFile(&ArenaTemp, "../src/example.c", &Size);
     if(Data) {
         printf("%.*s\n", (int)Size, Data);
     } else {
@@ -24,7 +24,7 @@ void TestReadFileChunk(void)
 
     u32 ChunkSize;
     for(size_t ChunkIdx = 0;
-        ReadFileChunk(&Chunk, "../src/test_windows.c", &ChunkSize);
+        ReadFileChunk(&Chunk, "../src/example.c", &ChunkSize);
         ChunkIdx++)
     {
         printf("Chunk "U64_Fmt": %.*s\n", ChunkIdx, ChunkSize, tmpBuffer);

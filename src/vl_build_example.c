@@ -7,23 +7,23 @@ void CompileStuff(void)
     vl_cmd cmd = {0};
 
     VL_cc(&cmd);
-    cmd_Append(&cmd, "../src/test.c");
-    VL_ccOutput(&cmd, "test" VL_EXE_EXTENSION);
+    cmd_Append(&cmd, "../src/example.c");
+    VL_ccOutput(&cmd, "example" VL_EXE_EXTENSION);
     VL_ccDebug(&cmd);
     VL_ccWarnings(&cmd);
     VL_ccWarningsAsErrors(&cmd);
     if(!CmdRun(&cmd)) return;
 
     VL_cc(&cmd);
-    cmd_Append(&cmd, "../src/test_mem.c");
-    VL_ccOutput(&cmd, "test_mem" VL_EXE_EXTENSION);
+    cmd_Append(&cmd, "../src/mem_example.c");
+    VL_ccOutput(&cmd, "mem_example" VL_EXE_EXTENSION);
     VL_ccWarnings(&cmd);
     VL_ccWarningsAsErrors(&cmd);
     if(!CmdRun(&cmd)) return;
 
     VL_cc(&cmd);
-    cmd_Append(&cmd, "../src/test_file_io.c");
-    VL_ccOutput(&cmd, "test_file_io" VL_EXE_EXTENSION);
+    cmd_Append(&cmd, "../src/file_io_example.c");
+    VL_ccOutput(&cmd, "file_io_example" VL_EXE_EXTENSION);
     VL_ccWarnings(&cmd);
     VL_ccWarningsAsErrors(&cmd);
     if(!CmdRun(&cmd)) return;
@@ -31,7 +31,7 @@ void CompileStuff(void)
 
 void TestNeedsRebuild(void)
 {
-    if(VL_Needs_C_Rebuild("test_vl_build" VL_EXE_EXTENSION, "src/test_vl_build.c")) {
+    if(VL_Needs_C_Rebuild("vl_build_example" VL_EXE_EXTENSION, "src/vl_build_example.c")) {
         printf("Needs rebuild\n");
     } else {
         printf("Doesn't need rebuild\n");
@@ -51,7 +51,7 @@ int main(int argc, char **argv)
 
     //TestNeedsRebuild();
 
-    if(VL_Needs_C_Rebuild("test_vl_build" VL_EXE_EXTENSION, "src/test_vl_build.c")) {
+    if(VL_Needs_C_Rebuild("vl_build_example" VL_EXE_EXTENSION, "src/vl_build_example.c")) {
         printf("Needs rebuild\n");
     } else {
         printf("Doesn't need rebuild\n");
