@@ -62,7 +62,7 @@ int main()
     // since VICLIB_NO_PLATFORM was not defined before including viclib.h, this will call the specific OS version of ReadEntireFile
     char *data = ReadEntireFile(&ArenaTemp, file, &filesize);
     if(!data) {
-        fprintf(stderr, "Could not read file '%s': %d\n", file, ErrorNumber); // ErrorNumber is defined in viclib.h
+        fprintf(stderr, "Could not read file '%s': %s\n", file, VL_GetError());
         return 1;
     }
     view v = view_FromParts(data, filesize);
