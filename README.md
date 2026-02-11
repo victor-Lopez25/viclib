@@ -2,7 +2,7 @@
 
 Header-only library which does some basic stuff you might want in a lot of programs
 
-viclib.h includes:
+### viclib.h includes:
  - String view implementation (view_* functions)
  - Assertions
  - Simple memory functions (mem_copy, mem_zero, mem_compare)
@@ -10,7 +10,7 @@ viclib.h includes:
  - Some file operations (filetime, read/write entirefile, getfiletype)
  - Sort() which performs an introsort
 
-vl_build.h includes:
+### vl_build.h includes:
  - viclib.h since it depends on it
  - string builder implementation (string_builder)
  - list implementation (da_*)
@@ -21,6 +21,12 @@ vl_build.h includes:
  - helpers to use any c compiler (VL_cc*) (gcc, clang, msvc are supported)
  - NOB_GO_REBUILD_URSELF technology (tm)
 
+### vl_serialize.h:
+Serialization library to serialize data into textual formats.
+Supported formats:
+ - JSON
+ - XML
+
 To download the header only libs:
 ```console
 wget -O viclib.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/viclib.h
@@ -30,12 +36,17 @@ vl_build.h depends on viclib.h
 wget -O viclib.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/viclib.h
 wget -O vl_build.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/vl_build.h
 ```
+vl_serialize.h depends on viclib.h and vl_build.h
+```console
+wget -O viclib.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/viclib.h
+wget -O vl_build.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/vl_build.h
+wget -O vl_serialize.h https://github.com/victor-Lopez25/viclib/raw/refs/heads/main/vl_serialize.h
+```
 
 ### WARNING: preferably use latest release and not a commit to main, since it could be broken
 
-## Usage:
-### Quick start
-viclib.h:
+## Quick start
+### viclib.h:
 ```c
 // include any stuff you might need for viclib before including viclib.h
 #include <stdio.h>
@@ -60,7 +71,7 @@ int main()
 }
 ```
 
-vl_build.h:
+### vl_build.h:
 ```c
 // vl_build.h includes viclib.h, define VICLIB_PATH if it's not "viclib.h"
 #define VL_BUILD_IMPLEMENTATION
@@ -83,6 +94,29 @@ int main(int argc, char **argv)
 
     return 0;
 }
+```
+
+### vl_serialize.h:
+```c
+// get a context, here you specify JSON or XML
+// indent controls how many spaces to add (indent = 0 or unspecified means everything in the same line)
+vl_serialize_context ctx = GetSerializeContext(SerializeType_JSON, .indent = 2);
+
+VL_ObjectBegin(&ctx);
+  VL_AttributeName(&ctx, "somenullobj");
+  VL_SerializeNull(&ctx);
+
+  VL_AttributeName(&ctx, "string-values");
+  // if specified, a name will be used for XML array elements, else it will use the names 'element n'
+  VL_ArrayBegin(&ctx, "stringval");
+    VL_SerializeString(&ctx, "hyper!");
+    VL_SerializeView(&ctx, VIEW("In the view"));
+  VL_ArrayEnd(&ctx);
+VL_ObjectEnd(&ctx);
+
+// output to stdout, to file, etc.
+printf(VIEW_FMT"\n", VIEW_ARG(ctx.output));
+// this also works: printf("%.*s\n", (int)ctx.output.count, ctx.output.items);
 ```
 
 ### Defines
