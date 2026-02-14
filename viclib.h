@@ -1433,7 +1433,7 @@ VLIBPROC bool VL_FileExists(const char *path)
 #if _WIN32
     return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
 #else
-    return access(file_path, F_OK) == 0;
+    return access(path, F_OK) == 0;
 #endif
 }
 
