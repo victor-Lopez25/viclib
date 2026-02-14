@@ -27,6 +27,13 @@ void CompileStuff(void)
     VL_ccWarnings(&cmd);
     VL_ccWarningsAsErrors(&cmd);
     if(!CmdRun(&cmd)) return;
+
+    VL_cc(&cmd);
+    cmd_Append(&cmd, "../src/vl_serialize_example.c");
+    VL_ccOutput(&cmd, "vl_serialize_example" VL_EXE_EXTENSION);
+    VL_ccWarnings(&cmd);
+    VL_ccWarningsAsErrors(&cmd);
+    if(!CmdRun(&cmd)) return;
 }
 
 void TestNeedsRebuild(void)
