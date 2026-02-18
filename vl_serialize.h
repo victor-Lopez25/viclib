@@ -61,8 +61,6 @@ struct vl_serialize_context {
         size_t count;
         size_t capacity;
     } scopes;
-    uint32_t count_object_scopes;
-    uint32_t count_array_scopes;
     view current_elem;
     uint8_t indent;
     bool should_pop_scope;
