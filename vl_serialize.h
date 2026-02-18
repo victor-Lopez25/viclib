@@ -63,13 +63,20 @@ struct vl_serialize_context {
     } scopes;
     view current_elem;
     uint8_t indent;
-    bool should_pop_scope;
     bool should_quote_strings;
-    bool ignore_element_begin; /* for TOML */
-    bool done_first_object; /* for TOML */
-    bool should_push_scope; /* for TOML */
-    vl_serialize_scope_type scope_type_to_push; /* for TOML */
-    size_t count_non_newline_scopes; /* for TOML */
+    
+    union {
+        struct {
+            bool ignore_element_begin;
+            bool done_first_object;
+            bool should_push_scope;
+            vl_serialize_scope_type scope_type_to_push;
+            size_t count_non_newline_scopes;
+        } TOML;
+        struct {
+            bool should_pop_scope;
+        } XML;
+    } as;
 
     void (*ObjectBegin)(vl_serialize_context *ctx);
     void (*AttributeNameView)(vl_serialize_context *ctx, view name);
@@ -288,9 +295,9 @@ static void XML_ElementEnd(vl_serialize_context *ctx)
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     scope->prev_needs_comma = true;
     scope->did_key = false;
-    if(ctx->should_pop_scope) {
+    if(ctx->as.XML.should_pop_scope) {
         VL__SerializeScopePop(ctx);
-        ctx->should_pop_scope = false;
+        ctx->as.XML.should_pop_scope = false;
         if(ctx->scopes.count == 0) return;
         
         if(ctx->indent > 0) {
@@ -344,7 +351,7 @@ static void XML_ObjectEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Object, "Error: Last json element was not an array and called VL_ArrayEnd");
-    ctx->should_pop_scope = true;
+    ctx->as.XML.should_pop_scope = true;
     ctx->ElementEnd(ctx);
     scope = &ctx->scopes.items[ctx->scopes.count - 1];
     scope->prev_needs_comma = true;
@@ -362,7 +369,7 @@ static void XML_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Outer scope was not an array and called VL_ArrayEnd");
-    ctx->should_pop_scope = true;
+    ctx->as.XML.should_pop_scope = true;
     ctx->ElementEnd(ctx);
     vl_serialize_scope *outer_scope = &ctx->scopes.items[ctx->scopes.count - 1];
     outer_scope->prev_needs_comma = true;
@@ -380,14 +387,14 @@ static void TOML_ElementBegin(vl_serialize_context *ctx)
     }
     
     vl_serialize_scope *scope;
-    if(ctx->should_push_scope) {
-        scope = VL__SerializeScopePush(ctx, ctx->scope_type_to_push);
+    if(ctx->as.TOML.should_push_scope) {
+        scope = VL__SerializeScopePush(ctx, ctx->as.TOML.scope_type_to_push);
     } else {
         scope = &ctx->scopes.items[ctx->scopes.count - 1];
     }
 
-    if(ctx->ignore_element_begin) {
-        ctx->ignore_element_begin = false;
+    if(ctx->as.TOML.ignore_element_begin) {
+        ctx->as.TOML.ignore_element_begin = false;
         return;
     }
 
@@ -396,7 +403,7 @@ static void TOML_ElementBegin(vl_serialize_context *ctx)
     }
 
     if(ctx->indent && !outer_scope_needs_newline) {
-        sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->count_non_newline_scopes), "");
+        sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->as.TOML.count_non_newline_scopes), "");
     }
 
     if(outer_scope_type == SerializeScope_Object) {
@@ -419,21 +426,21 @@ static void TOML_ElementEnd(vl_serialize_context *ctx)
 
 static void TOML_ObjectBegin(vl_serialize_context *ctx)
 {
-    if(ctx->scopes.count <= 1) ctx->ignore_element_begin = true;
-    ctx->scope_type_to_push = SerializeScope_Object;
-    ctx->should_push_scope = true;
+    if(ctx->scopes.count <= 1) ctx->as.TOML.ignore_element_begin = true;
+    ctx->as.TOML.scope_type_to_push = SerializeScope_Object;
+    ctx->as.TOML.should_push_scope = true;
     ctx->ElementBegin(ctx);
-    ctx->should_push_scope = false;
+    ctx->as.TOML.should_push_scope = false;
 
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     if(ctx->scopes.count == 1) {
         scope->scope_needs_newline = true;
     } else if(ctx->scopes.count > 2 || ctx->scopes.items[1].type == SerializeScope_Array) {
-        ctx->count_non_newline_scopes++;
+        ctx->as.TOML.count_non_newline_scopes++;
         da_Append(&ctx->output, '{');
     } else if(ctx->scopes.count == 2) {
-        if(!ctx->done_first_object) {
-            ctx->done_first_object = true;
+        if(!ctx->as.TOML.done_first_object) {
+            ctx->as.TOML.done_first_object = true;
             sb_Appendf(&ctx->output, "\n["VIEW_FMT"]\n", VIEW_ARG(ctx->current_elem));
         } else {
             sb_Appendf(&ctx->output, "["VIEW_FMT"]\n", VIEW_ARG(ctx->current_elem));
@@ -457,9 +464,9 @@ static void TOML_ObjectEnd(vl_serialize_context *ctx)
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Object, "Error: Last toml element was not an object and called VL_ObjectEnd");
     if(!scope->scope_needs_newline) {
-        ctx->count_non_newline_scopes--;
+        ctx->as.TOML.count_non_newline_scopes--;
         if(ctx->indent > 0 && scope->prev_needs_comma) {
-            sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->count_non_newline_scopes), "");
+            sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->as.TOML.count_non_newline_scopes), "");
         }
         da_Append(&ctx->output, '}');
     }
@@ -473,12 +480,12 @@ static void TOML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
     (void)elem_name; // NOTE: TOML doesn't give a name to array elements
     AssertMsg(ctx->scopes.count > 0, "Error: An outmost scope of an array is not allowed in TOML");
 
-    ctx->scope_type_to_push = SerializeScope_Array;
-    ctx->should_push_scope = true;
+    ctx->as.TOML.scope_type_to_push = SerializeScope_Array;
+    ctx->as.TOML.should_push_scope = true;
     ctx->ElementBegin(ctx);
-    ctx->should_push_scope = false;
+    ctx->as.TOML.should_push_scope = false;
 
-    ctx->count_non_newline_scopes++;
+    ctx->as.TOML.count_non_newline_scopes++;
     da_Append(&ctx->output, '[');
 }
 
@@ -486,9 +493,9 @@ static void TOML_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Last toml element was not an array and called VL_ArrayEnd");
-    ctx->count_non_newline_scopes--;
+    ctx->as.TOML.count_non_newline_scopes--;
     if(ctx->indent > 0 && scope->prev_needs_comma) {
-        sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->count_non_newline_scopes), "");
+        sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->as.TOML.count_non_newline_scopes), "");
     }
     da_Append(&ctx->output, ']');
     VL__SerializeScopePop(ctx);
