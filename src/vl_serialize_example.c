@@ -9,8 +9,8 @@ int main(int argc, char **argv)
     VL_GO_REBUILD_URSELF(argc, argv, "vl_serialize.h");
 
     //vl_serialize_context ctx = GetSerializeContext(SerializeType_JSON, .indent = 2);
-    //vl_serialize_context ctx = GetSerializeContext(SerializeType_XML, .indent = 2);
-    vl_serialize_context ctx = GetSerializeContext(SerializeType_TOML, .indent = 2);
+    vl_serialize_context ctx = GetSerializeContext(SerializeType_XML, .indent = 2);
+    //vl_serialize_context ctx = GetSerializeContext(SerializeType_TOML, .indent = 2);
 
     VL_ObjectBegin(&ctx);
         VL_AttributeName(&ctx, "somenullobj");
