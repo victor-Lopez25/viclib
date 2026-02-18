@@ -22,9 +22,13 @@
 
 /* This library will only print utf8 strings */
 
+// TODO: Make unions for scope, context with a struct for each serialization type
+// TODO: Remove trailing newlines (at the end) for TOML generation
+
 typedef enum {
     SerializeType_JSON,
     SerializeType_XML,
+    SerializeType_TOML,
 } vl_serialize_type;
 
 typedef enum {
@@ -36,6 +40,7 @@ typedef struct {
     vl_serialize_scope_type type;
     bool prev_needs_comma;
     bool did_key;
+    bool scope_needs_newline; /* for TOML */
     view current_elem;
     view array_elem_name;
     uint32_t array_elem_idx;
@@ -50,7 +55,6 @@ typedef struct vl_serialize_context vl_serialize_context;
 struct vl_serialize_context {
     vl_serialize_type type;
     string_builder output;
-    uint8_t indent;
 
     struct {
         vl_serialize_scope *items;
@@ -59,14 +63,28 @@ struct vl_serialize_context {
     } scopes;
     uint32_t count_object_scopes;
     uint32_t count_array_scopes;
+    view current_elem;
+    uint8_t indent;
     bool should_pop_scope;
     bool should_quote_strings;
+    bool ignore_element_begin; /* for TOML */
+    bool done_first_object; /* for TOML */
+    bool should_push_scope; /* for TOML */
+    vl_serialize_scope_type scope_type_to_push; /* for TOML */
+    size_t count_non_newline_scopes; /* for TOML */
 
     void (*ObjectBegin)(vl_serialize_context *ctx);
     void (*AttributeNameView)(vl_serialize_context *ctx, view name);
     void (*ObjectEnd)(vl_serialize_context *ctx);
     void (*ArrayBeginView)(vl_serialize_context *ctx, view name);
     void (*ArrayEnd)(vl_serialize_context *ctx);
+
+    // TODO: SerializeOpNull ????
+    // TODO: SerializeOpBool
+    // TODO: SerializeOpInt
+    // TODO: SerializeOpFloat
+    // TODO: SerializeOpString
+    // TODO: SerializeOpView
 
     // Internals
     void (*ElementBegin)(vl_serialize_context *ctx);
@@ -119,6 +137,7 @@ static void VL__SerializeScopePop(vl_serialize_context *ctx)
 {
     Assert(ctx->scopes.count > 0);
     ctx->scopes.count--;
+    mem_zero(&ctx->scopes.items[ctx->scopes.count], sizeof(*ctx->scopes.items));
 }
 
 static uint8_t VL__Utf8CharLen(uint8_t ch)
@@ -137,7 +156,6 @@ static void VL__SerializeViewNoElement(vl_serialize_context *ctx, view v)
     const char *hex = "0123456789abcdef";
     const char *special_chars = "btnvfr";
 
-    da_Append(&ctx->output, '"');
     const char *s = v.items;
     for(size_t i = 0; i < v.count; i++) {
         uint8_t ch = ((uint8_t*)s)[i];
@@ -161,7 +179,6 @@ static void VL__SerializeViewNoElement(vl_serialize_context *ctx, view v)
             }
         }
     }
-    da_Append(&ctx->output, '"');
 }
 
 //////////////////////////////////////////////
@@ -203,18 +220,19 @@ static void JSON_AttributeNameView(vl_serialize_context *ctx, view name)
     ctx->ElementBegin(ctx);
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
-    AssertMsg(scope->type == SerializeScope_Object, "Error: Must be in an object not an array");
+    AssertMsg(scope->type == SerializeScope_Object, "Error: Must be in an object to make `key = value` pairs");
     AssertMsg(!scope->did_key, "Error: Can only have key-value pairs, no double keys");
     
+    da_Append(&ctx->output, '"');
     VL__SerializeViewNoElement(ctx, name);
-    da_Append(&ctx->output, ':');
+    sb_Appendf(&ctx->output, "\":");
     scope->did_key = true;
 }
 
 static void JSON_ObjectEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
-    AssertMsg(scope->type == SerializeScope_Object, "Error: Last json element was not an array and called VL_ArrayEnd");
+    AssertMsg(scope->type == SerializeScope_Object, "Error: Last json element was not an array and called VL_ObjectEnd");
     if(ctx->indent > 0 && scope->prev_needs_comma) {
         sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
     }
@@ -302,10 +320,6 @@ static void XML_ElementEnd(vl_serialize_context *ctx)
             sb_Appendf(&ctx->output, "</"VIEW_FMT">", VIEW_ARG(scope->current_elem));
         }
     }
-
-    //if(ctx->scopes.count > 0) {
-    //    scope->prev_needs_comma = false;
-    //}
 }
 
 static void XML_ObjectBegin(vl_serialize_context *ctx)
@@ -354,8 +368,136 @@ static void XML_ArrayEnd(vl_serialize_context *ctx)
     ctx->ElementEnd(ctx);
     vl_serialize_scope *outer_scope = &ctx->scopes.items[ctx->scopes.count - 1];
     outer_scope->prev_needs_comma = true;
-//    outer_scope->prev_needs_comma = false;
 }
+
+//////////////////////////////////////////////
+
+static void TOML_ElementBegin(vl_serialize_context *ctx)
+{
+    vl_serialize_scope_type outer_scope_type = 0;
+    bool outer_scope_needs_newline = false;
+    if(ctx->scopes.count > 0) {
+        outer_scope_type = ctx->scopes.items[ctx->scopes.count - 1].type;
+        outer_scope_needs_newline = ctx->scopes.items[ctx->scopes.count - 1].scope_needs_newline;
+    }
+    
+    vl_serialize_scope *scope;
+    if(ctx->should_push_scope) {
+        scope = VL__SerializeScopePush(ctx, ctx->scope_type_to_push);
+    } else {
+        scope = &ctx->scopes.items[ctx->scopes.count - 1];
+    }
+
+    if(ctx->ignore_element_begin) {
+        ctx->ignore_element_begin = false;
+        return;
+    }
+
+    if(scope->prev_needs_comma) {
+        da_Append(&ctx->output, outer_scope_needs_newline ? '\n' : ',');
+    }
+
+    if(ctx->indent && !outer_scope_needs_newline) {
+        sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->count_non_newline_scopes), "");
+    }
+
+    if(outer_scope_type == SerializeScope_Object) {
+        sb_Appendf(&ctx->output, VIEW_FMT"%s", VIEW_ARG(ctx->current_elem),
+            ctx->indent ? " = " : "=");
+    }
+}
+
+static void TOML_ElementEnd(vl_serialize_context *ctx)
+{
+    if(ctx->scopes.count > 0) {
+        vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
+        scope->prev_needs_comma = true;
+
+        if(scope->scope_needs_newline) {
+            da_Append(&ctx->output, '\n');
+        }
+    }
+}
+
+static void TOML_ObjectBegin(vl_serialize_context *ctx)
+{
+    if(ctx->scopes.count <= 1) ctx->ignore_element_begin = true;
+    ctx->scope_type_to_push = SerializeScope_Object;
+    ctx->should_push_scope = true;
+    ctx->ElementBegin(ctx);
+    ctx->should_push_scope = false;
+
+    vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
+    if(ctx->scopes.count == 1) {
+        scope->scope_needs_newline = true;
+    } else if(ctx->scopes.count > 2 || ctx->scopes.items[1].type == SerializeScope_Array) {
+        ctx->count_non_newline_scopes++;
+        da_Append(&ctx->output, '{');
+    } else if(ctx->scopes.count == 2) {
+        if(!ctx->done_first_object) {
+            ctx->done_first_object = true;
+            sb_Appendf(&ctx->output, "\n["VIEW_FMT"]\n", VIEW_ARG(ctx->current_elem));
+        } else {
+            sb_Appendf(&ctx->output, "["VIEW_FMT"]\n", VIEW_ARG(ctx->current_elem));
+        }
+
+        scope->scope_needs_newline = true;
+    }
+}
+
+static void TOML_AttributeNameView(vl_serialize_context *ctx, view name)
+{
+    //ctx->ElementBegin(ctx);
+    AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
+    vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
+    AssertMsg(scope->type == SerializeScope_Object, "Error: Must be in an object to make `key = value` pairs");
+    ctx->current_elem = name;
+}
+
+static void TOML_ObjectEnd(vl_serialize_context *ctx)
+{
+    vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
+    AssertMsg(scope->type == SerializeScope_Object, "Error: Last toml element was not an object and called VL_ObjectEnd");
+    if(!scope->scope_needs_newline) {
+        ctx->count_non_newline_scopes--;
+        if(ctx->indent > 0 && scope->prev_needs_comma) {
+            sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->count_non_newline_scopes), "");
+        }
+        da_Append(&ctx->output, '}');
+    }
+    
+    VL__SerializeScopePop(ctx);
+    ctx->ElementEnd(ctx);
+}
+
+static void TOML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
+{
+    (void)elem_name; // NOTE: TOML doesn't give a name to array elements
+    AssertMsg(ctx->scopes.count > 0, "Error: An outmost scope of an array is not allowed in TOML");
+
+    ctx->scope_type_to_push = SerializeScope_Array;
+    ctx->should_push_scope = true;
+    ctx->ElementBegin(ctx);
+    ctx->should_push_scope = false;
+
+    ctx->count_non_newline_scopes++;
+    da_Append(&ctx->output, '[');
+}
+
+static void TOML_ArrayEnd(vl_serialize_context *ctx)
+{
+    vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
+    AssertMsg(scope->type == SerializeScope_Array, "Error: Last toml element was not an array and called VL_ArrayEnd");
+    ctx->count_non_newline_scopes--;
+    if(ctx->indent > 0 && scope->prev_needs_comma) {
+        sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->count_non_newline_scopes), "");
+    }
+    da_Append(&ctx->output, ']');
+    VL__SerializeScopePop(ctx);
+    ctx->ElementEnd(ctx);
+}
+
+//////////////////////////////////////////////
 
 SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext_opts opt)
 {
@@ -387,6 +529,19 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
             result.ElementBegin = XML_ElementBegin;
             result.ElementEnd = XML_ElementEnd;
             result.should_quote_strings = false;
+        } break;
+
+        case SerializeType_TOML: {
+            result.ObjectBegin = TOML_ObjectBegin;
+            result.AttributeNameView = TOML_AttributeNameView;
+            result.ObjectEnd = TOML_ObjectEnd;
+
+            result.ArrayBeginView = TOML_ArrayBeginView;
+            result.ArrayEnd = TOML_ArrayEnd;
+
+            result.ElementBegin = TOML_ElementBegin;
+            result.ElementEnd = TOML_ElementEnd;            
+            result.should_quote_strings = true;
         } break;
 
         default: {
@@ -449,7 +604,9 @@ SERIALIZE_PROC void VL_SerializeView(vl_serialize_context *ctx, view v)
 {
     ctx->ElementBegin(ctx);
     if(ctx->should_quote_strings) {
+        da_Append(&ctx->output, '"');
         VL__SerializeViewNoElement(ctx, v);
+        da_Append(&ctx->output, '"');
     } else {
         sb_Appendf(&ctx->output, VIEW_FMT, VIEW_ARG(v));
     }
