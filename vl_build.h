@@ -136,7 +136,7 @@ VLIBPROC bool VL_DeleteFile(const char *path);
 #define VL_DECLTYPE_CAST(T)
 #endif
 
-#define da_Reserve(da, ExpectedCapacity)                                                 \
+#define DaReserve(da, ExpectedCapacity)                                                 \
     do {                                                                                 \
         if((ExpectedCapacity) > (da)->capacity) {                                        \
             if((da)->capacity == 0) {                                                    \
@@ -150,28 +150,28 @@ VLIBPROC bool VL_DeleteFile(const char *path);
         }                                                                                \
     } while(0)
 
-#define da_AppendMany(da, NewItems, NewItemCount)                                       \
+#define DaAppendMany(da, NewItems, NewItemCount)                                       \
     do {                                                                                \
-        da_Reserve((da), (da)->count + (NewItemCount));                                 \
+        DaReserve((da), (da)->count + (NewItemCount));                                 \
         memcpy((da)->items + (da)->count, (NewItems), (NewItemCount)*sizeof(*(da)->items)); \
         (da)->count += (NewItemCount);                                                  \
     } while(0)
 
-#define da_Append(da, item)                  \
+#define DaAppend(da, item)                  \
     do {                                     \
-        da_Reserve((da), (da)->count + 1);   \
+        DaReserve((da), (da)->count + 1);   \
         (da)->items[(da)->count++] = (item); \
     } while(0)
 
-#define da_Free(da) VL_FREE((da).items)
-#define da_RemoveUnordered(da, i)                    \
+#define DaFree(da) VL_FREE((da).items)
+#define DaRemoveUnordered(da, i)                    \
     do {                                             \
         size_t j = (i);                              \
         Assert(j < (da)->count);                     \
         (da)->items[j] = (da)->items[--(da)->count]; \
     } while(0)
 
-#define da_Foreach(Type, it, da) for(Type *it = (da)->items; it < (da)->items + (da)->count; ++it)
+#define DaForeach(Type, it, da) for(Type *it = (da)->items; it < (da)->items + (da)->count; ++it)
 
 typedef struct {
     char *items;
@@ -179,22 +179,22 @@ typedef struct {
     size_t capacity;
 } string_builder;
 
-VLIBPROC bool sb_ReadEntireFile(const char *path, string_builder *sb);
+VLIBPROC bool SbReadEntireFile(const char *path, string_builder *sb);
 // Does not append null terminator to sb
-VLIBPROC int sb_Appendf(string_builder *sb, const char *fmt, ...) VL_PRINTF_FORMAT(2, 3);
-VLIBPROC bool sb_PadAlign(string_builder *sb, size_t size);
+VLIBPROC int SbAppendf(string_builder *sb, const char *fmt, ...) VL_PRINTF_FORMAT(2, 3);
+VLIBPROC bool SbPadAlign(string_builder *sb, size_t size);
 
-#define sb_AppendBuf(sb, buf, size) da_AppendMany(sb, buf, size)
+#define SbAppendBuf(sb, buf, size) DaAppendMany(sb, buf, size)
 // does not include null character
-#define sb_AppendCstr(sb, cstr)  \
+#define SbAppendCstr(sb, cstr)  \
     do {                         \
         const char *s = (cstr);  \
         size_t n = strlen(s);    \
-        da_AppendMany(sb, s, n); \
+        DaAppendMany(sb, s, n); \
     } while (0)
 
-#define sb_AppendNull(sb) da_Append(sb, 0)
-#define sb_Free(sb) VL_FREE((sb).items)
+#define SbAppendNull(sb) DaAppend(sb, 0)
+#define SbFree(sb) VL_FREE((sb).items)
 
 typedef struct {
     vl_proc *items;
@@ -236,22 +236,22 @@ typedef struct {
 } vl_cmd_opts;
 
 // Render a string representation of a command into a string builder. Keep in mind the the
-// string builder is not NULL-terminated by default. Use sb_AppendNull if you plan to
+// string builder is not NULL-terminated by default. Use SbAppendNull if you plan to
 // use it as a C string.
 VLIBPROC void VL_CmdRender(vl_cmd cmd, string_builder *render);
 
 VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt);
 #define CmdRun(Cmd, ...) CmdRun_Opt((vl_cmd_opts){.cmd = (Cmd), __VA_ARGS__})
 
-#define cmd_Append(cmd, ...) \
-    da_AppendMany(cmd, \
+#define CmdAppend(cmd, ...) \
+    DaAppendMany(cmd, \
                   ((const char*[]){__VA_ARGS__}), \
                   (sizeof((const char*[]){__VA_ARGS__})/sizeof(const char*)))
 
-#define cmd_Extend(cmd, other_cmd) \
-    da_AppendMany(cmd, (other_cmd)->items, (other_cmd)->count)
+#define CmdExtend(cmd, other_cmd) \
+    DaAppendMany(cmd, (other_cmd)->items, (other_cmd)->count)
 
-#define cmd_Free(cmd) VL_FREE(cmd.items)
+#define CmdFree(cmd) VL_FREE(cmd.items)
 
 VLIBPROC int VL_GetCountProcs(void);
 
@@ -714,16 +714,16 @@ VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src, const char *dst,
                 if(!strcmp(children.items[i], "..")) continue;
 
                 srcSb.count = 0;
-                sb_AppendCstr(&srcSb, src);
-                sb_AppendCstr(&srcSb, "/");
-                sb_AppendCstr(&srcSb, children.items[i]);
-                sb_AppendNull(&srcSb);
+                SbAppendCstr(&srcSb, src);
+                SbAppendCstr(&srcSb, "/");
+                SbAppendCstr(&srcSb, children.items[i]);
+                SbAppendNull(&srcSb);
 
                 dstSb.count = 0;
-                sb_AppendCstr(&dstSb, dst);
-                sb_AppendCstr(&dstSb, "/");
-                sb_AppendCstr(&dstSb, children.items[i]);
-                sb_AppendNull(&dstSb);
+                SbAppendCstr(&dstSb, dst);
+                SbAppendCstr(&dstSb, "/");
+                SbAppendCstr(&dstSb, children.items[i]);
+                SbAppendNull(&dstSb);
 
                 if(!VL_CopyDirectoryRecursively_Impl(srcSb.items, dstSb.items, ext)) {
                     VL_ReturnDefer(false);
@@ -751,9 +751,9 @@ VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src, const char *dst,
 
 defer:
     temp_rewind(tempCheckpoint);
-    da_Free(srcSb);
-    da_Free(dstSb);
-    da_Free(children);
+    DaFree(srcSb);
+    DaFree(dstSb);
+    DaFree(children);
     return result;
 }
 
@@ -792,10 +792,10 @@ VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, vl_file_paths
                 if(strcmp(children_tmp.items[i], "..") == 0) continue;
 
                 src_sb.count = 0;
-                sb_AppendCstr(&src_sb, parent);
-                sb_AppendCstr(&src_sb, "/");
-                sb_AppendCstr(&src_sb, children_tmp.items[i]);
-                sb_AppendNull(&src_sb);
+                SbAppendCstr(&src_sb, parent);
+                SbAppendCstr(&src_sb, "/");
+                SbAppendCstr(&src_sb, children_tmp.items[i]);
+                SbAppendNull(&src_sb);
 
                 if(!VL_ReadDirectoryFilesRecursively(src_sb.items, children)) {
                     VL_ReturnDefer(false);
@@ -805,7 +805,7 @@ VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, vl_file_paths
 
         case VL_FILE_REGULAR:
         case VL_FILE_SYMLINK: {
-            da_Append(children, temp_strdup(parent));
+            DaAppend(children, temp_strdup(parent));
         } break;
 
         case VL_FILE_OTHER: {
@@ -817,8 +817,8 @@ VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, vl_file_paths
     }
 
 defer:
-    da_Free(children_tmp);
-    da_Free(src_sb);
+    DaFree(children_tmp);
+    DaFree(src_sb);
     return result;
 }
 
@@ -841,7 +841,7 @@ VLIBPROC bool VL_ReadEntireDir(const char *parent, vl_file_paths *children)
     errno = 0;
     ent = readdir(dir);
     while (ent != NULL) {
-        da_Append(children, temp_strdup(ent->d_name));
+        DaAppend(children, temp_strdup(ent->d_name));
         ent = readdir(dir);
     }
 
@@ -910,7 +910,7 @@ VLIBPROC bool VL_DeleteFile(const char *path)
 #endif // _WIN32
 }
 
-VLIBPROC bool sb_ReadEntireFile(const char *path, string_builder *sb)
+VLIBPROC bool SbReadEntireFile(const char *path, string_builder *sb)
 {
     bool result = true;
 
@@ -948,7 +948,7 @@ defer:
     return result;
 }
 
-VLIBPROC int sb_Appendf(string_builder *sb, const char *fmt, ...)
+VLIBPROC int SbAppendf(string_builder *sb, const char *fmt, ...)
 {
     va_list args;
 
@@ -958,8 +958,8 @@ VLIBPROC int sb_Appendf(string_builder *sb, const char *fmt, ...)
 
     // NOTE: the new_capacity needs to be +1 because of the null terminator.
     // However, further below we increase sb->count by n, not n + 1.
-    // This is because we don't want the sb to include the null terminator. The user can always sb_append_null() if they want it
-    da_Reserve(sb, sb->count + n + 1);
+    // This is because we don't want the sb to include the null terminator. The user can always Sbappend_null() if they want it
+    DaReserve(sb, sb->count + n + 1);
     char *dest = sb->items + sb->count;
     va_start(args, fmt);
     vsnprintf(dest, n+1, fmt, args);
@@ -970,12 +970,12 @@ VLIBPROC int sb_Appendf(string_builder *sb, const char *fmt, ...)
     return n;
 }
 
-VLIBPROC bool sb_PadAlign(string_builder *sb, size_t size)
+VLIBPROC bool SbPadAlign(string_builder *sb, size_t size)
 {
     size_t rem = sb->count%size;
     if(rem == 0) return true;
     for(size_t i = 0; i < size - rem; ++i) {
-        da_Append(sb, 0);
+        DaAppend(sb, 0);
     }
     return true;
 }
@@ -1132,13 +1132,13 @@ VLIBPROC void VL_CmdRender(vl_cmd cmd, string_builder *render)
     for(size_t i = 0; i < cmd.count; ++i) {
         const char *arg = cmd.items[i];
         if(arg == NULL) break;
-        if(i > 0) sb_AppendCstr(render, " ");
+        if(i > 0) SbAppendCstr(render, " ");
         if(!strchr(arg, ' ')) {
-            sb_AppendCstr(render, arg);
+            SbAppendCstr(render, arg);
         } else {
-            da_Append(render, '\'');
-            sb_AppendCstr(render, arg);
-            da_Append(render, '\'');
+            DaAppend(render, '\'');
+            SbAppendCstr(render, arg);
+            DaAppend(render, '\'');
         }
     }
 }
@@ -1162,7 +1162,7 @@ VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt)
                 int ret = VL__ProcWaitAsync(opt.async->items[i], 1);
                 if(ret < 0) VL_ReturnDefer(false);
                 if(ret) {
-                    da_RemoveUnordered(opt.async, i);
+                    DaRemoveUnordered(opt.async, i);
                     break;
                 }
             }
@@ -1189,7 +1189,7 @@ VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt)
 
     if(opt.async) {
         if(proc == VL_INVALID_PROC) VL_ReturnDefer(false);
-        da_Append(opt.async, proc);
+        DaAppend(opt.async, proc);
     } else {
         if(!VL_ProcWait(proc)) VL_ReturnDefer(false);
     }
@@ -1321,13 +1321,13 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
     size_t startTempMark = temp_save();
 
     u32 hashval;
-    da_AppendMany(&searchPaths, input_paths, input_paths_count);
+    DaAppendMany(&searchPaths, input_paths, input_paths_count);
     // TODO: Need some way to know if I explored all dependencies of a specific file
     while(searchPaths.count > 0) {
         char *currPath = (char*)searchPaths.items[0];
         view vPath = view_FromCstr(currPath);
 
-        da_Append(&searchPathsDone, currPath);
+        DaAppend(&searchPathsDone, currPath);
         // unordered remove in each iteration
         searchPaths.count--;
         searchPaths.items[0] = searchPaths.items[searchPaths.count];
@@ -1411,9 +1411,9 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
         
         //if(!node->exploredAllDependencies) {
             sb.count = 0;
-            if(!sb_ReadEntireFile(vPath.items, &sb)) continue;
+            if(!SbReadEntireFile(vPath.items, &sb)) continue;
 
-            sb_AppendNull(&sb);
+            SbAppendNull(&sb);
 
             // TODO: Check if smarter parsing, where we don't try to do anything when it's commented out (in a multiline comment) is any better/quicker (I don't think so)
             char *ptr = sb.items;
@@ -1442,7 +1442,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
                 if(VL_FileExists(filename)) {
                     // Found in 1.
                     LinearSearch(&searchPaths, filename, !strcmp);
-                    if(!found) da_Append(&searchPaths, filename);
+                    if(!found) DaAppend(&searchPaths, filename);
                     continue;
                 }
 
@@ -1458,7 +1458,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
                 if(VL_FileExists(contiguousPath)) {
                     // Found in 2.
                     LinearSearch(&searchPaths, contiguousPath, !strcmp);
-                    if(!found) da_Append(&searchPaths, contiguousPath);
+                    if(!found) DaAppend(&searchPaths, contiguousPath);
                     continue;
                 }
 
@@ -1474,7 +1474,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
                                 // Found in 3.
                                 path = temp_sprintf("%s/%s", ctx->includePaths->items[incIdx], filename);
                                 LinearSearch(&searchPaths, path, !strcmp);
-                                if(!found) da_Append(&searchPaths, path);
+                                if(!found) DaAppend(&searchPaths, path);
                                 else temp_rewind(tempMark);
                                 found = true;
                                 break;
@@ -1485,7 +1485,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
                 if(!found) {
                     /* Add it to already done search paths if it doesn't get found since it's most likely a 
                        standard libary include: e.g. math.h */
-                    da_Append(&searchPathsDone, filename);
+                    DaAppend(&searchPathsDone, filename);
                 }
             }
         //}
@@ -1493,9 +1493,9 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
 
     temp_rewind(startTempMark);
 
-    da_Free(searchPathsDone);
-    da_Free(searchPaths);
-    da_Free(sb);
+    DaFree(searchPathsDone);
+    DaFree(searchPaths);
+    DaFree(sb);
 
     return result;
 }
@@ -1670,16 +1670,16 @@ VLIBPROC void VL_cc_Opt(struct compiler_info_opts opt)
 {
     switch(opt.cc) {
         case CCompiler_GCC: {
-            cmd_Append(opt.cmd, "cc");
+            CmdAppend(opt.cmd, "cc");
         } break;
         case CCompiler_Clang: {
-            cmd_Append(opt.cmd, "clang");
+            CmdAppend(opt.cmd, "clang");
         } break;
         case CCompiler_MSVC: {
-            cmd_Append(opt.cmd, "cl.exe");
+            CmdAppend(opt.cmd, "cl.exe");
         } break;
         case CCompiler_TCC: {
-            cmd_Append(opt.cmd, "tcc");
+            CmdAppend(opt.cmd, "tcc");
         } break;
     }
 }
@@ -1690,10 +1690,10 @@ VLIBPROC void VL_ccWarnings_Opt(struct compiler_info_opts opt)
         case CCompiler_GCC:
         case CCompiler_TCC:
         case CCompiler_Clang: {
-            cmd_Append(opt.cmd, "-Wall", "-Wextra");
+            CmdAppend(opt.cmd, "-Wall", "-Wextra");
         } break;
         case CCompiler_MSVC: {
-            cmd_Append(opt.cmd, "-W4", "-nologo", "-D_CRT_SECURE_NO_WARNINGS");
+            CmdAppend(opt.cmd, "-W4", "-nologo", "-D_CRT_SECURE_NO_WARNINGS");
         } break;
     }
 }
@@ -1704,10 +1704,10 @@ VLIBPROC void VL_ccWarningsAsErrors_Opt(struct compiler_info_opts opt)
         case CCompiler_GCC:
         case CCompiler_TCC:
         case CCompiler_Clang: {
-            cmd_Append(opt.cmd, "-Werror");
+            CmdAppend(opt.cmd, "-Werror");
         } break;
         case CCompiler_MSVC: {
-            cmd_Append(opt.cmd, "-WX");
+            CmdAppend(opt.cmd, "-WX");
         } break;
     }
 }
@@ -1719,10 +1719,10 @@ VLIBPROC void VL_ccOutput_Opt(struct compiler_info_opts opt, const char *output)
         case CCompiler_GCC:
         case CCompiler_TCC:
         case CCompiler_Clang: {
-            cmd_Append(opt.cmd, "-o", output);
+            CmdAppend(opt.cmd, "-o", output);
         } break;
         case CCompiler_MSVC: {
-            cmd_Append(opt.cmd, temp_sprintf("/Fe:%s", output));
+            CmdAppend(opt.cmd, temp_sprintf("/Fe:%s", output));
         } break;
     }
 }
@@ -1733,10 +1733,10 @@ VLIBPROC void VL_ccDebug_Opt(struct compiler_info_opts opt)
         case CCompiler_GCC:
         case CCompiler_TCC:
         case CCompiler_Clang: {
-            cmd_Append(opt.cmd, "-g");
+            CmdAppend(opt.cmd, "-g");
         } break;
         case CCompiler_MSVC: {
-            cmd_Append(opt.cmd, "-Zi");
+            CmdAppend(opt.cmd, "-Zi");
         } break;
     }
 }
@@ -1745,7 +1745,7 @@ VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, si
 {
 #if OS_WINDOWS
     if(opt.cc == CCompiler_MSVC && !opt.cmd->msvc_linkflags) {
-        cmd_Append(opt.cmd, "/link");
+        CmdAppend(opt.cmd, "/link");
         opt.cmd->msvc_linkflags = true;
     }
 #endif
@@ -1755,10 +1755,10 @@ VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, si
             case CCompiler_GCC:
             case CCompiler_TCC:
             case CCompiler_Clang: {
-                cmd_Append(opt.cmd, "-l", libs[i]);
+                CmdAppend(opt.cmd, "-l", libs[i]);
             } break;
             case CCompiler_MSVC: {
-                cmd_Append(opt.cmd, temp_sprintf("%s.lib", libs[i]));
+                CmdAppend(opt.cmd, temp_sprintf("%s.lib", libs[i]));
             } break;
         }
     }
@@ -1768,7 +1768,7 @@ VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpat
 {
 #if OS_WINDOWS
     if(opt.cc == CCompiler_MSVC && !opt.cmd->msvc_linkflags) {
-        cmd_Append(opt.cmd, "/link");
+        CmdAppend(opt.cmd, "/link");
         opt.cmd->msvc_linkflags = true;
     }
 #endif
@@ -1777,10 +1777,10 @@ VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpat
         case CCompiler_GCC:
         case CCompiler_TCC:
         case CCompiler_Clang: {
-            cmd_Append(opt.cmd, "-L", libpath);
+            CmdAppend(opt.cmd, "-L", libpath);
         } break;
         case CCompiler_MSVC: {
-            cmd_Append(opt.cmd, temp_sprintf("/libpath:%s", libpath));
+            CmdAppend(opt.cmd, temp_sprintf("/libpath:%s", libpath));
         } break;
     }
 }
@@ -1792,16 +1792,16 @@ static void Win32_CmdQuote(vl_cmd cmd, string_builder *quoted)
         const char *arg = cmd.items[i];
         if(arg == NULL) break;
         size_t len = strlen(arg);
-        if(i > 0) da_Append(quoted, ' ');
+        if(i > 0) DaAppend(quoted, ' ');
         if(len != 0 && NULL == strpbrk(arg, " \t\n\v\"")) {
             // no need to quote
-            da_AppendMany(quoted, arg, len);
+            DaAppendMany(quoted, arg, len);
         } else {
             // we need to escape:
             // 1. double quotes in the original arg
             // 2. consequent backslashes before a double quote
             size_t backslashes = 0;
-            da_Append(quoted, '\"');
+            DaAppend(quoted, '\"');
             for(size_t j = 0; j < len; ++j) {
                 char x = arg[j];
                 if(x == '\\') {
@@ -1810,18 +1810,18 @@ static void Win32_CmdQuote(vl_cmd cmd, string_builder *quoted)
                     if(x == '\"') {
                         // escape backslashes (if any) and the double quote
                         for(size_t k = 0; k < 1+backslashes; ++k) {
-                            da_Append(quoted, '\\');
+                            DaAppend(quoted, '\\');
                         }
                     }
                     backslashes = 0;
                 }
-                da_Append(quoted, x);
+                DaAppend(quoted, x);
             }
             // escape backslashes (if any)
             for(size_t k = 0; k < backslashes; ++k) {
-                da_Append(quoted, '\\');
+                DaAppend(quoted, '\\');
             }
-            da_Append(quoted, '\"');
+            DaAppend(quoted, '\"');
         }
     }
 }
@@ -1839,9 +1839,9 @@ static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd 
 
     string_builder sb = {0};
     VL_CmdRender(cmd, &sb);
-    sb_AppendNull(&sb);
+    SbAppendNull(&sb);
     VL_Log(VL_INFO, "CMD: %s", sb.items);
-    sb_Free(sb);
+    SbFree(sb);
     memset(&sb, 0, sizeof(sb));
 
 #if OS_WINDOWS
@@ -1862,9 +1862,9 @@ static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd 
     ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
 
     Win32_CmdQuote(cmd, &sb);
-    sb_AppendNull(&sb);
+    SbAppendNull(&sb);
     BOOL bSuccess = CreateProcessA(NULL, sb.items, NULL, NULL, TRUE, 0, NULL, NULL, &siStartInfo, &piProcInfo);
-    sb_Free(sb);
+    SbFree(sb);
 
     if(!bSuccess) {
         VL_Log(VL_ERROR, "Could not create child process for %s: %s", cmd.items[0], Win32_ErrorMessage(GetLastError()));
@@ -1906,7 +1906,7 @@ static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd 
         // NOTE: This leaks a bit of memory in the child process.
         // But do we actually care? It's a one off leak anyway...
         vl_cmd cmdNull = {0};
-        da_AppendMany(&cmdNull, cmd.items, cmd.count);
+        DaAppendMany(&cmdNull, cmd.items, cmd.count);
         cmd_Append(&cmdNull, NULL);
 
         if(execvp(cmd.items[0], (char * const*) cmdNull.items) < 0) {
@@ -1948,7 +1948,7 @@ VLIBPROC void VL__GoRebuildUrself(int argc, char **argv, const char **src_paths,
     const char *old_bin_path = temp_sprintf("%s.old", bin_path);
 
     if(!VL_Rename(bin_path, old_bin_path)) exit(1);
-    cmd_Append(&cmd, VL_REBUILD_URSELF(bin_path, src_paths[0]));
+    CmdAppend(&cmd, VL_REBUILD_URSELF(bin_path, src_paths[0]));
     if(!CmdRun(&cmd)) {
         VL_Rename(old_bin_path, bin_path);
         exit(1);
@@ -1961,8 +1961,8 @@ VLIBPROC void VL__GoRebuildUrself(int argc, char **argv, const char **src_paths,
     VL_DeleteFile(old_binary_path);
 #endif
 
-    cmd_Append(&cmd, bin_path);
-    da_AppendMany(&cmd, argv, argc);
+    CmdAppend(&cmd, bin_path);
+    DaAppendMany(&cmd, argv, argc);
     if(!CmdRun(&cmd)) exit(1);
     exit(0);
 }
