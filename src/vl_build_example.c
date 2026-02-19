@@ -7,7 +7,7 @@ void CompileStuff(void)
     vl_cmd cmd = {0};
 
     VL_cc(&cmd);
-    cmd_Append(&cmd, "../src/example.c");
+    CmdAppend(&cmd, "../src/example.c");
     VL_ccOutput(&cmd, "example" VL_EXE_EXTENSION);
     VL_ccDebug(&cmd);
     VL_ccWarnings(&cmd);
@@ -15,21 +15,21 @@ void CompileStuff(void)
     if(!CmdRun(&cmd)) return;
 
     VL_cc(&cmd);
-    cmd_Append(&cmd, "../src/mem_example.c");
+    CmdAppend(&cmd, "../src/mem_example.c");
     VL_ccOutput(&cmd, "mem_example" VL_EXE_EXTENSION);
     VL_ccWarnings(&cmd);
     VL_ccWarningsAsErrors(&cmd);
     if(!CmdRun(&cmd)) return;
 
     VL_cc(&cmd);
-    cmd_Append(&cmd, "../src/file_io_example.c");
+    CmdAppend(&cmd, "../src/file_io_example.c");
     VL_ccOutput(&cmd, "file_io_example" VL_EXE_EXTENSION);
     VL_ccWarnings(&cmd);
     VL_ccWarningsAsErrors(&cmd);
     if(!CmdRun(&cmd)) return;
 
     VL_cc(&cmd);
-    cmd_Append(&cmd, "../src/vl_serialize_example.c");
+    CmdAppend(&cmd, "../src/vl_serialize_example.c");
     VL_ccOutput(&cmd, "vl_serialize_example" VL_EXE_EXTENSION);
     VL_ccWarnings(&cmd);
     VL_ccWarningsAsErrors(&cmd);

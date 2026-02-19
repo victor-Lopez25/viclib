@@ -363,7 +363,7 @@ typedef struct {
     const char *items;
     size_t count;
 } view;
-#define VIEW(cstr_lit) view_FromParts((cstr_lit), sizeof(cstr_lit) - 1)
+#define VIEW(cstr_lit) ViewFromParts((cstr_lit), sizeof(cstr_lit) - 1)
 #if defined(__cplusplus)
 #define VIEW_STATIC(cstr_lit) {(const char*)(cstr_lit), sizeof(cstr_lit) - 1}
 #else
@@ -381,52 +381,52 @@ size_t strlen(const char *s);
 #endif // VL_INC_STRING_H
 
 int is_space(int _c); // only checks ascii space characters
-VIEWPROC view view_FromParts(const char *data, size_t count);
-VIEWPROC view view_FromCstr(const char *cstr);
-VIEWPROC view view_Slice(view v, size_t start, size_t end); // won't include end -> [start, end)
-VIEWPROC int  view_Compare(view a, view b); // result = A - B
-VIEWPROC bool view_Eq(view a, view b);
-VIEWPROC bool view_StartsWith(view v, view start);
+VIEWPROC view ViewFromParts(const char *data, size_t count);
+VIEWPROC view ViewFromCstr(const char *cstr);
+VIEWPROC view ViewSlice(view v, size_t start, size_t end); // won't include end -> [start, end)
+VIEWPROC int  ViewCompare(view a, view b); // result = A - B
+VIEWPROC bool ViewEq(view a, view b);
+VIEWPROC bool ViewStartsWith(view v, view start);
 // Chops start from v when it gets found
-VIEWPROC bool view_ChopStartsWith(view *v, view start);
-VIEWPROC const char *view_Find(view haystack, view needle); // result = pointer to where the needle is in haystack or null
+VIEWPROC bool ViewChopStartsWith(view *v, view start);
+VIEWPROC const char *ViewFind(view haystack, view needle); // result = pointer to where the needle is in haystack or null
 // If the needle gets found, chop the haystack until the first ocurrence of needle in haystack
-VIEWPROC bool view_FindChop(view *haystack, view needle, view *chopped);
-VIEWPROC bool view_FindCharacter(view v, char c, size_t *n);
-VIEWPROC bool view_FindChopCharacter(view *v, char c, view *chopped);
-#define view_EndWith view_EndsWith /* in case of singular/plural annoyance */
-VIEWPROC bool view_EndsWith(view v, view end);
-VIEWPROC view view_ChopByDelim(view *v, char delim);
-VIEWPROC view view_ChopByLine(view *v); // '\n' or "\r\n"
-VIEWPROC view view_ChopByAnyDelim(view *v, view delims, char *delimiter); // checks for any character in Delims, stores found delimiter in Delimiter
-VIEWPROC view view_ChopByView(view *v, view delim); // full view is the delim
-VIEWPROC view view_ChopLeft(view *v, size_t n);
-VIEWPROC view view_ChopRight(view *v, size_t n);
-VIEWPROC view view_TrimLeft(view v);
-VIEWPROC view view_TrimRight(view v);
-VIEWPROC view view_Trim(view v);
+VIEWPROC bool ViewFindChop(view *haystack, view needle, view *chopped);
+VIEWPROC bool ViewFindCharacter(view v, char c, size_t *n);
+VIEWPROC bool ViewFindChopCharacter(view *v, char c, view *chopped);
+#define ViewEndWith ViewEndsWith /* in case of singular/plural annoyance */
+VIEWPROC bool ViewEndsWith(view v, view end);
+VIEWPROC view ViewChopByDelim(view *v, char delim);
+VIEWPROC view ViewChopByLine(view *v); // '\n' or "\r\n"
+VIEWPROC view ViewChopByAnyDelim(view *v, view delims, char *delimiter); // checks for any character in Delims, stores found delimiter in Delimiter
+VIEWPROC view ViewChopByView(view *v, view delim); // full view is the delim
+VIEWPROC view ViewChopLeft(view *v, size_t n);
+VIEWPROC view ViewChopRight(view *v, size_t n);
+VIEWPROC view ViewTrimLeft(view v);
+VIEWPROC view ViewTrimRight(view v);
+VIEWPROC view ViewTrim(view v);
 
-#define view_IterateLines(src, idxName, lineName) \
-    view lineName = view_ChopByLine(src); \
-    for(size_t idxName = 0; (src)->count > 0 || lineName.count > 0; lineName = view_ChopByLine(src), idxName++)
+#define ViewIterateLines(src, idxName, lineName) \
+    view lineName = ViewChopByLine(src); \
+    for(size_t idxName = 0; (src)->count > 0 || lineName.count > 0; lineName = ViewChopByLine(src), idxName++)
 
-#define view_IterateSpaces(src, idxName, wordName) \
-    view wordName = view_ChopByAnyDelim((src), VIEW_STATIC(" \n\t\v\f\r"), 0); \
-    for(size_t idxName = 0; (src)->count > 0 || wordName.count > 0; wordName = view_ChopByAnyDelim((src), VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
+#define ViewIterateSpaces(src, idxName, wordName) \
+    view wordName = ViewChopByAnyDelim((src), VIEW_STATIC(" \n\t\v\f\r"), 0); \
+    for(size_t idxName = 0; (src)->count > 0 || wordName.count > 0; wordName = ViewChopByAnyDelim((src), VIEW_STATIC(" \n\t\v\f\r"), 0), idxName++) \
         if(word.count > 0)
 
-#define view_IterateDelimiters(src, delims, idxName, tokName, delimName) \
+#define ViewIterateDelimiters(src, delims, idxName, tokName, delimName) \
     char delimName; \
-    view tokName = view_ChopByAnyDelim((src), delims, &delimName); \
+    view tokName = ViewChopByAnyDelim((src), delims, &delimName); \
     for(size_t idxName = 0; (src)->count > 0 || tokName.count > 0 || delimName != '\0'; \
-        tokName = view_ChopByAnyDelim((src), delims, &delimName), idxName++)
+        tokName = ViewChopByAnyDelim((src), delims, &delimName), idxName++)
 
 #define PARSE_FAIL 0
 #define PARSE_NO_DECIMALS 1 // for when you might want integer precision
 #define PARSE_OK 2
-VIEWPROC bool view_ParseS64(view v, s64 *result, view *remaining);
+VIEWPROC bool ViewParseS64(view v, s64 *result, view *remaining);
 // TODO: Better exp parsing
-VIEWPROC int view_ParseF64(view v, f64 *result, view *remaining);
+VIEWPROC int ViewParseF64(view v, f64 *result, view *remaining);
 
 typedef struct {
     view file;
@@ -645,7 +645,7 @@ size_t strlen(const char *s)
 }
 #endif // strlen
 
-VIEWPROC view view_FromParts(const char *data, size_t count)
+VIEWPROC view ViewFromParts(const char *data, size_t count)
 {
     view v;
     v.items = data;
@@ -653,7 +653,7 @@ VIEWPROC view view_FromParts(const char *data, size_t count)
     return v;
 }
 
-VIEWPROC view view_FromCstr(const char *cstr)
+VIEWPROC view ViewFromCstr(const char *cstr)
 {
     view v;
     v.items = cstr;
@@ -661,33 +661,33 @@ VIEWPROC view view_FromCstr(const char *cstr)
     return v;
 }
 
-VIEWPROC view view_Slice(view a, size_t start, size_t end)
+VIEWPROC view ViewSlice(view a, size_t start, size_t end)
 {
     AssertMsg(start <= end, "start must be smaller or equal to end");
     AssertMsg(end <= a.count, "end must be less or equal to the source view count");
-    return view_FromParts(a.items + start, end - start);
+    return ViewFromParts(a.items + start, end - start);
 }
 
-VIEWPROC view view_TrimLeft(view v)
+VIEWPROC view ViewTrimLeft(view v)
 {
     size_t i = 0;
     for(;i < v.count && is_space(v.items[i]);) i += 1;
 
-    return view_FromParts((const char*)(v.items + i), v.count - i);
+    return ViewFromParts((const char*)(v.items + i), v.count - i);
 }
-VIEWPROC view view_TrimRight(view v)
+VIEWPROC view ViewTrimRight(view v)
 {
     size_t i = 0;
     for(;i < v.count && is_space(v.items[v.count - 1 - i]);) i += 1;
 
-    return view_FromParts((const char*)v.items, v.count - i);
+    return ViewFromParts((const char*)v.items, v.count - i);
 }
-VIEWPROC view view_Trim(view v)
+VIEWPROC view ViewTrim(view v)
 {
-    return view_TrimRight(view_TrimLeft(v));
+    return ViewTrimRight(ViewTrimLeft(v));
 }
 
-VIEWPROC int view_Compare(view a, view b)
+VIEWPROC int ViewCompare(view a, view b)
 {
     char res = 0;
     for(size_t i = 0; i < min(a.count, b.count); i++)
@@ -698,21 +698,21 @@ VIEWPROC int view_Compare(view a, view b)
     return (int)a.count - (int)b.count;
 }
 
-VIEWPROC bool view_Eq(view a, view b)
+VIEWPROC bool ViewEq(view a, view b)
 {
     if(a.count != b.count) return false;
     else return mem_compare(a.items, b.items, a.count) == 0;
 }
 
-VIEWPROC bool view_StartsWith(view v, view start)
+VIEWPROC bool ViewStartsWith(view v, view start)
 {
     if(start.count > v.count) return false;
-    else return view_Eq(view_FromParts(v.items, start.count), start);
+    else return ViewEq(ViewFromParts(v.items, start.count), start);
 }
 
-VIEWPROC bool view_ChopStartsWith(view *v, view start)
+VIEWPROC bool ViewChopStartsWith(view *v, view start)
 {
-    bool found = view_StartsWith(*v, start);
+    bool found = ViewStartsWith(*v, start);
     if(found) {
         v->items += start.count;
         v->count -= start.count;
@@ -720,7 +720,7 @@ VIEWPROC bool view_ChopStartsWith(view *v, view start)
     return found;
 }
 
-VIEWPROC const char *view_Find(view haystack, view needle)
+VIEWPROC const char *ViewFind(view haystack, view needle)
 {
     if(needle.count == 0) return haystack.items;
     if(needle.count > haystack.count) return (const char*)0;
@@ -775,9 +775,9 @@ VIEWPROC const char *view_Find(view haystack, view needle)
     return (const char*)0;
 }
 
-VIEWPROC bool view_FindChop(view *haystack, view needle, view *chopped)
+VIEWPROC bool ViewFindChop(view *haystack, view needle, view *chopped)
 {
-    const char *s = view_Find(*haystack, needle);
+    const char *s = ViewFind(*haystack, needle);
     if(s) {
         size_t count = s - haystack->items;
         if(chopped) {
@@ -791,7 +791,7 @@ VIEWPROC bool view_FindChop(view *haystack, view needle, view *chopped)
     return false;
 }
 
-VIEWPROC bool view_FindCharacter(view v, char c, size_t *n)
+VIEWPROC bool ViewFindCharacter(view v, char c, size_t *n)
 {
     for(size_t i = 0; i < v.count; i++) {
         if(v.items[i] == c) {
@@ -802,10 +802,10 @@ VIEWPROC bool view_FindCharacter(view v, char c, size_t *n)
     return false;
 }
 
-VIEWPROC bool view_FindChopCharacter(view *v, char c, view *chopped)
+VIEWPROC bool ViewFindChopCharacter(view *v, char c, view *chopped)
 {
     size_t count;
-    bool found = view_FindCharacter(*v, c, &count);
+    bool found = ViewFindCharacter(*v, c, &count);
     if(found) {
         if(chopped) {
             chopped->items = v->items;
@@ -818,18 +818,18 @@ VIEWPROC bool view_FindChopCharacter(view *v, char c, view *chopped)
     return found;
 }
 
-VIEWPROC bool view_EndsWith(view v, view end)
+VIEWPROC bool ViewEndsWith(view v, view end)
 {
     if(end.count > v.count) return false;
-    else return view_Eq(view_FromParts(v.items + v.count - end.count, end.count), end);
+    else return ViewEq(ViewFromParts(v.items + v.count - end.count, end.count), end);
 }
 
-VIEWPROC view view_ChopByDelim(view *v, char delim)
+VIEWPROC view ViewChopByDelim(view *v, char delim)
 {
     size_t i = 0;
     for(;i < v->count && v->items[i] != delim;) i += 1;
 
-    view Result = view_FromParts((const char*)v->items, i);
+    view Result = ViewFromParts((const char*)v->items, i);
 
     if(i < v->count) {
         v->count -= i + 1;
@@ -843,7 +843,7 @@ VIEWPROC view view_ChopByDelim(view *v, char delim)
     return Result;
 }
 
-VIEWPROC view view_ChopByLine(view *v)
+VIEWPROC view ViewChopByLine(view *v)
 {
     size_t moveLen = 1;
     size_t i = 0;
@@ -853,7 +853,7 @@ VIEWPROC view view_ChopByLine(view *v)
         i--;
     }
 
-    view Result = view_FromParts((const char*)v->items, i);
+    view Result = ViewFromParts((const char*)v->items, i);
 
     if(i < v->count) {
         v->count -= i + moveLen;
@@ -867,7 +867,7 @@ VIEWPROC view view_ChopByLine(view *v)
     return Result;
 }
 
-VIEWPROC view view_ChopByAnyDelim(view *v, view delims, char *delimiter)
+VIEWPROC view ViewChopByAnyDelim(view *v, view delims, char *delimiter)
 {
     view Result;
     if(delimiter) *delimiter = 0;
@@ -882,7 +882,7 @@ VIEWPROC view view_ChopByAnyDelim(view *v, view delims, char *delimiter)
     }
 
 done:
-    Result = view_FromParts((const char*)v->items, i);
+    Result = ViewFromParts((const char*)v->items, i);
 
     if(i < v->count) {
         v->count -= i + 1;
@@ -896,16 +896,16 @@ done:
     return Result;
 }
 
-VIEWPROC view view_ChopByView(view *v, view delim)
+VIEWPROC view ViewChopByView(view *v, view delim)
 {
-    view Window = view_FromParts((const char*)v->items, delim.count);
+    view Window = ViewFromParts((const char*)v->items, delim.count);
     size_t i = 0;
-    for(; i + delim.count < v->count && !view_Eq(Window, delim);) {
+    for(; i + delim.count < v->count && !ViewEq(Window, delim);) {
         i++;
         Window.items++;
     }
 
-    view Result = view_FromParts((const char*)v->items, i);
+    view Result = ViewFromParts((const char*)v->items, i);
 
     if(i + delim.count == v->count) {
         // include last <delim.count> characters if they aren't
@@ -919,22 +919,22 @@ VIEWPROC view view_ChopByView(view *v, view delim)
     return Result;
 }
 
-VIEWPROC view view_ChopLeft(view *v, size_t n)
+VIEWPROC view ViewChopLeft(view *v, size_t n)
 {
     if(n > v->count) n = v->count;
 
-    view Result = view_FromParts((const char*)v->items, n);
+    view Result = ViewFromParts((const char*)v->items, n);
     v->items += n;
     v->count -= n;
 
     return Result;
 }
 
-VIEWPROC view view_ChopRight(view *v, size_t n)
+VIEWPROC view ViewChopRight(view *v, size_t n)
 {
     if(n > v->count) n = v->count;
 
-    view Result = view_FromParts((const char*)(v->items + v->count - n), n);
+    view Result = ViewFromParts((const char*)(v->items + v->count - n), n);
     v->count -= n;
 
     return Result;
@@ -959,10 +959,10 @@ int _digit_val(int c)
 // try to compile: int n = 080;
 // I checked out how Odin did octal and they do "0o" prefix, seemed more logical.
 // I also don't know what the "0z" prefix of base 12 is for but I'll just leave it there
-VIEWPROC bool view_ParseS64(view v, s64 *result, view *remaining)
+VIEWPROC bool ViewParseS64(view v, s64 *result, view *remaining)
 {
     AssertMsg(result != 0, "Result parameter must be a valid pointer");
-    v = view_TrimLeft(v);
+    v = ViewTrimLeft(v);
     if(v.count == 0) return false;
 
     bool Neg = false;
@@ -1026,10 +1026,10 @@ VIEWPROC bool view_ParseS64(view v, s64 *result, view *remaining)
     return true;
 }
 
-int view_ParseF64(view v, f64 *result, view *remaining)
+int ViewParseF64(view v, f64 *result, view *remaining)
 {
     AssertMsg(result != 0, "Result parameter must be a valid pointer");
-    v = view_TrimLeft(v);
+    v = ViewTrimLeft(v);
     if(v.count == 0) return PARSE_FAIL;
     bool DecimalPart = false;
 
@@ -1071,7 +1071,7 @@ int view_ParseF64(view v, f64 *result, view *remaining)
         else if(c == 'e' || c == 'E') {
             // Try to parse exponent
             // Not sure how I feel about this, there probably is a better way to do this
-            ExponentStr = view_FromParts(v.items + j + 1, v.count - j - 1);
+            ExponentStr = ViewFromParts(v.items + j + 1, v.count - j - 1);
 
             bool Prefixed = false;
             bool ExpNeg = false;
@@ -1456,7 +1456,7 @@ bool IsDebuggerPresent(void)
 
     buf[num_read] = '\0';
     char tracerPidString[] = "TracerPid:";
-    const char *tracer_pid_ptr = strstr(buf, tracerPidString); // TODO: use view_Contains (when it is better)
+    const char *tracer_pid_ptr = strstr(buf, tracerPidString); // TODO: use ViewContains (when it is better)
     if (!tracer_pid_ptr)
         return false;
     

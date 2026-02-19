@@ -11,38 +11,38 @@
 void TestViewStrs()
 {
     view T1 = VIEW_STATIC("1020");
-    view T2 = view_FromParts("1020", 4);
-    view T3 = view_FromCstr("1020");
-    Assert(view_Eq(T1, T2) && view_Eq(T2, T3));
+    view T2 = ViewFromParts("1020", 4);
+    view T3 = ViewFromCstr("1020");
+    Assert(ViewEq(T1, T2) && ViewEq(T2, T3));
 
     printf("Chop \""VIEW_FMT"\" by delim '0': ", VIEW_ARG(T1));
-    view T4 = view_ChopByDelim(&T1, '0');
+    view T4 = ViewChopByDelim(&T1, '0');
     printf("Chopped: \""VIEW_FMT"\"\tRemaining: \""VIEW_FMT"\"\n", VIEW_ARG(T4), VIEW_ARG(T1));
-    Assert(view_Eq(T4, VIEW("1")) && view_Eq(T1, VIEW("20")));
+    Assert(ViewEq(T4, VIEW("1")) && ViewEq(T1, VIEW("20")));
 
     printf("Chop \""VIEW_FMT"\" by view \"02\": ", VIEW_ARG(T2));
-    view T5 = view_ChopByView(&T2, VIEW("02"));
+    view T5 = ViewChopByView(&T2, VIEW("02"));
     printf("Chopped: \""VIEW_FMT"\"\tRemaining: \""VIEW_FMT"\"\n", VIEW_ARG(T5), VIEW_ARG(T2));
-    Assert(view_Eq(T5, VIEW("1")) && view_Eq(T2, VIEW("0")));
+    Assert(ViewEq(T5, VIEW("1")) && ViewEq(T2, VIEW("0")));
 
     printf("Chop \""VIEW_FMT"\" left by 1:\t", VIEW_ARG(T3));
-    view T6 = view_ChopLeft(&T3, 1);
+    view T6 = ViewChopLeft(&T3, 1);
     printf("Chopped: \""VIEW_FMT"\"\tRemaining: \""VIEW_FMT"\"\n", VIEW_ARG(T6), VIEW_ARG(T3));
-    Assert(view_Eq(T6, VIEW("1")) && view_Eq(T3, VIEW("020")));
+    Assert(ViewEq(T6, VIEW("1")) && ViewEq(T3, VIEW("020")));
 
     printf("Chop \""VIEW_FMT"\" right by 1:\t", VIEW_ARG(T3));
-    T6 = view_ChopRight(&T3, 1);
+    T6 = ViewChopRight(&T3, 1);
     printf("Chopped: \""VIEW_FMT"\"\tRemaining: \""VIEW_FMT"\"\n", VIEW_ARG(T6), VIEW_ARG(T3));
-    Assert(view_Eq(T6, VIEW("0")) && view_Eq(T3, VIEW("02")));
+    Assert(ViewEq(T6, VIEW("0")) && ViewEq(T3, VIEW("02")));
 
     view T7 = VIEW_STATIC("\t \nHello\v\f\r");
-    T6 = view_Trim(T7);
-    Assert(view_StartsWith(T6, VIEW("Hell")));
-    Assert(view_Find(T6, VIEW("ell")) != 0);
-    Assert(view_EndsWith(T6, VIEW("ello")));
+    T6 = ViewTrim(T7);
+    Assert(ViewStartsWith(T6, VIEW("Hell")));
+    Assert(ViewFind(T6, VIEW("ell")) != 0);
+    Assert(ViewEndsWith(T6, VIEW("ello")));
     printf("To trim: \""VIEW_FMT"\"\tTrimmed: \""VIEW_FMT"\"\n", VIEW_ARG(T7), VIEW_ARG(T6));
 
-    view T8 = view_Slice(T6, 2, 4);
+    view T8 = ViewSlice(T6, 2, 4);
     printf("To slice: \""VIEW_FMT"\"\tSliced (2, 4): \""VIEW_FMT"\"\n", VIEW_ARG(T6), VIEW_ARG(T8));
 
     view T9 = 
@@ -58,16 +58,16 @@ void TestViewStrs()
     printf("Splitting lines:\n"
            "source string: \""VIEW_FMT"\"\n", VIEW_ARG(T9));
 
-    view_IterateLines(&T9, lineIdx, line) printf("line %d: \'"VIEW_FMT"\'\n", (int)lineIdx, VIEW_ARG(line));
+    ViewIterateLines(&T9, lineIdx, line) printf("line %d: \'"VIEW_FMT"\'\n", (int)lineIdx, VIEW_ARG(line));
 
     view T11 = T10;
     printf("Splitting spaces:\n");
-    view_IterateSpaces(&T10, wordIdx, word)
+    ViewIterateSpaces(&T10, wordIdx, word)
         printf("word %d: \""VIEW_FMT"\"\t", (int)wordIdx, VIEW_ARG(word));
 
     printf("\nSplitting by separators:\n");
     view delims = VIEW_STATIC(" {}*;#().,");
-    view_IterateDelimiters(&T11, delims, tokIdx, token, delim)
+    ViewIterateDelimiters(&T11, delims, tokIdx, token, delim)
         if((token.count > 0 && !(token.count == 1 && token.items[0] == '\n')) || delim != ' ')
             printf("token %d: \""VIEW_FMT"\"\tdelim found: '%c'\n", (int)tokIdx, VIEW_ARG(token), delim);
 }
@@ -76,46 +76,46 @@ void TestParsing()
 {
     view TestStr = VIEW_STATIC("123");
     s64 Val;
-    bool ok = view_ParseS64(TestStr, &Val, 0);
+    bool ok = ViewParseS64(TestStr, &Val, 0);
     Assert(ok);
     printf(S64_Fmt"\n", Val);
 
     TestStr = VIEW("+123Hello");
     view Remaining;
-    Assert(view_ParseS64(TestStr, &Val, &Remaining));
+    Assert(ViewParseS64(TestStr, &Val, &Remaining));
     printf("string: \""VIEW_FMT"\" -> num: "S64_Fmt", remaining: \""VIEW_FMT"\"\n",
            VIEW_ARG(TestStr), Val, VIEW_ARG(Remaining));
 
     TestStr = VIEW("-123");
-    Assert(view_ParseS64(TestStr, &Val, 0));
+    Assert(ViewParseS64(TestStr, &Val, 0));
     printf(S64_Fmt"\n", Val);
     TestStr = VIEW("+123");
-    Assert(view_ParseS64(TestStr, &Val, 0));
+    Assert(ViewParseS64(TestStr, &Val, 0));
     printf(S64_Fmt"\n", Val);
 
     TestStr = VIEW("0xFF");
-    Assert(view_ParseS64(TestStr, &Val, 0));
+    Assert(ViewParseS64(TestStr, &Val, 0));
     printf(S64_Fmt"\n", Val);
 
     TestStr = VIEW("0b0110");
-    Assert(view_ParseS64(TestStr, &Val, 0));
+    Assert(ViewParseS64(TestStr, &Val, 0));
     printf(S64_Fmt"\n", Val);
 
     TestStr = VIEW("-0d1234");
-    Assert(view_ParseS64(TestStr, &Val, 0));
+    Assert(ViewParseS64(TestStr, &Val, 0));
     printf(S64_Fmt"\n", Val);
 
     f64 F64Val;
     TestStr = VIEW("2.71828");
-    Assert(view_ParseF64(TestStr, &F64Val, 0) == PARSE_OK);
+    Assert(ViewParseF64(TestStr, &F64Val, 0) == PARSE_OK);
     printf("%lf\n", F64Val);
 
     TestStr = VIEW("-.135hello");
-    Assert(view_ParseF64(TestStr, &F64Val, &TestStr) == PARSE_OK);
+    Assert(ViewParseF64(TestStr, &F64Val, &TestStr) == PARSE_OK);
     printf("val: %lf, rem: "VIEW_FMT"\n", F64Val, VIEW_ARG(TestStr));
 
     TestStr = VIEW("1.32e+4hello");
-    Assert(view_ParseF64(TestStr, &F64Val, &TestStr) == PARSE_OK);
+    Assert(ViewParseF64(TestStr, &F64Val, &TestStr) == PARSE_OK);
     printf("val: %lf, rem: "VIEW_FMT"\n", F64Val, VIEW_ARG(TestStr));
 }
 

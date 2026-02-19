@@ -732,7 +732,7 @@ VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src, const char *dst,
         } break;
 
         case VL_FILE_REGULAR: {
-            if(view_EndsWith(view_FromCstr(src), view_FromCstr(ext)) && !VL_CopyFile(src, dst)) {
+            if(ViewEndsWith(ViewFromCstr(src), ViewFromCstr(ext)) && !VL_CopyFile(src, dst)) {
                 VL_ReturnDefer(false);
             }
         } break;
@@ -1325,7 +1325,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
     // TODO: Need some way to know if I explored all dependencies of a specific file
     while(searchPaths.count > 0) {
         char *currPath = (char*)searchPaths.items[0];
-        view vPath = view_FromCstr(currPath);
+        view vPath = ViewFromCstr(currPath);
 
         DaAppend(&searchPathsDone, currPath);
         // unordered remove in each iteration
@@ -1337,7 +1337,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
         vl_filetime_node *node = &ctx->table.nodes.items[hashval];
         vl_filetime_node prev_ = {.next = node};
         vl_filetime_node *prev = &prev_;
-        while(prev->next && !view_Eq(prev->next->file, vPath)) {
+        while(prev->next && !ViewEq(prev->next->file, vPath)) {
             prev = prev->next;
         }
 
@@ -1418,7 +1418,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
             // TODO: Check if smarter parsing, where we don't try to do anything when it's commented out (in a multiline comment) is any better/quicker (I don't think so)
             char *ptr = sb.items;
             while(ptr) {
-                // TODO: Use viclib's view parsing for this when view_Contains is redone
+                // TODO: Use viclib's view parsing for this when ViewContains is redone
                 ptr = strstr(ptr, "\n#include");
                 if(!ptr) break;
                 ptr = strpbrk(ptr + strlen("\n#include"), "\"<"); /* find first '<' or '"' character */
@@ -1934,7 +1934,7 @@ VLIBPROC void VL__GoRebuildUrself(int argc, char **argv, const char **src_paths,
 #ifdef _WIN32
     // On Windows executables almost always invoked without extension, so
     // it's ./nob, not ./nob.exe. For renaming the extension is a must.
-    if(!view_EndWith(view_FromCstr(bin_path), VIEW_STATIC(".exe"))) {
+    if(!ViewEndWith(ViewFromCstr(bin_path), VIEW_STATIC(".exe"))) {
         bin_path = temp_sprintf("%s.exe", bin_path);
     }
 #endif

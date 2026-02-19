@@ -332,7 +332,7 @@ static void XML_ElementBegin(vl_serialize_context *ctx)
         }
 
         if(scope->type == SerializeScope_Array) {
-            if(view_Eq(scope->array_elem_name, VIEW(""))) {
+            if(ViewEq(scope->array_elem_name, VIEW(""))) {
                 SbAppendf(&ctx->output, "<element %u>", scope->array_elem_idx);
             } else {
                 SbAppendf(&ctx->output, "<"VIEW_FMT">", VIEW_ARG(scope->array_elem_name));
@@ -361,7 +361,7 @@ static void XML_ElementEnd(vl_serialize_context *ctx)
             if(((popped_scope_type == SerializeScope_Array) && 
                 (popped_scope_array_elem_idx != 0)) ||
                ((popped_scope_type == SerializeScope_Object) && 
-                !view_Eq(popped_scope_current_elem, VIEW(""))))
+                !ViewEq(popped_scope_current_elem, VIEW(""))))
             {
                 SbAppendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
             } 
@@ -373,14 +373,14 @@ static void XML_ElementEnd(vl_serialize_context *ctx)
 
     if(scope->type == SerializeScope_Array) {
         if(scope->array_elem_idx != 0) {
-            if(view_Eq(scope->current_elem, VIEW(""))) {
+            if(ViewEq(scope->current_elem, VIEW(""))) {
                 SbAppendf(&ctx->output, "</element %u>", scope->array_elem_idx - 1);
             } else {
                 SbAppendf(&ctx->output, "</"VIEW_FMT">", VIEW_ARG(scope->array_elem_name));
             }
         }
     } else {
-        if(!view_Eq(scope->current_elem, VIEW(""))) {
+        if(!ViewEq(scope->current_elem, VIEW(""))) {
             SbAppendf(&ctx->output, "</"VIEW_FMT">", VIEW_ARG(scope->current_elem));
         }
     }
@@ -632,13 +632,13 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
 
 SERIALIZE_PROC void VL_AttributeName(vl_serialize_context *ctx, const char *name)
 {
-    ctx->AttributeNameView(ctx, view_FromCstr(name));
+    ctx->AttributeNameView(ctx, ViewFromCstr(name));
 }
 
 SERIALIZE_PROC void VL_ArrayBegin_Impl(struct VL_ArrayBegin_opts opt)
 {
     opt.ctx->ArrayBeginView(opt.ctx,
-        opt.elem_name ? view_FromCstr(opt.elem_name) : VIEW(""));
+        opt.elem_name ? ViewFromCstr(opt.elem_name) : VIEW(""));
 }
 
 SERIALIZE_PROC void VL_SerializeNull(vl_serialize_context *ctx)
@@ -675,7 +675,7 @@ SERIALIZE_PROC void VL_SerializeFloat(vl_serialize_context *ctx, double val)
 
 SERIALIZE_PROC void VL_SerializeString(vl_serialize_context *ctx, const char *s)
 {
-    VL_SerializeView(ctx, view_FromCstr(s));
+    VL_SerializeView(ctx, ViewFromCstr(s));
 }
 
 SERIALIZE_PROC void VL_SerializeView(vl_serialize_context *ctx, view v)
