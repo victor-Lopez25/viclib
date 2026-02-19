@@ -46,22 +46,22 @@ int main(int argc, char **argv)
 
         VL_AttributeName(&ctx, "another-object");
         VL_ObjectBegin(&ctx);
-            VL_AttributeName(&ctx, "empty array");
+            VL_AttributeName(&ctx, "empty-array");
             VL_ArrayBegin(&ctx);
             VL_ArrayEnd(&ctx);
 
-            VL_AttributeName(&ctx, "empty object");
+            VL_AttributeName(&ctx, "empty-object");
             VL_ObjectBegin(&ctx);
             VL_ObjectEnd(&ctx);
         VL_ObjectEnd(&ctx);
 
-        VL_AttributeName(&ctx, "deep object");
+        VL_AttributeName(&ctx, "deep-object");
         VL_ObjectBegin(&ctx);
-            VL_AttributeName(&ctx, "deeper object");
+            VL_AttributeName(&ctx, "deeper-object");
             VL_ObjectBegin(&ctx);
-                VL_AttributeName(&ctx, "deeperer object");
+                VL_AttributeName(&ctx, "deeperer-object");
                 VL_ObjectBegin(&ctx);
-                    VL_AttributeName(&ctx, "deep arr");
+                    VL_AttributeName(&ctx, "deep-arr");
                     VL_ArrayBegin(&ctx);
                         VL_SerializeString(&ctx, "abcdef");
                         VL_SerializeString(&ctx, "ghijkl");

@@ -296,13 +296,19 @@ static void XML_ElementEnd(vl_serialize_context *ctx)
     scope->prev_needs_comma = true;
     scope->did_key = false;
     if(ctx->as.XML.should_pop_scope) {
-        VL__SerializeScopePop(ctx);
         ctx->as.XML.should_pop_scope = false;
+
+        vl_serialize_scope_type popped_scope_type = scope->type;
+        view popped_scope_current_elem = scope->current_elem;
+        size_t popped_scope_array_elem_idx = scope->array_elem_idx;
+        VL__SerializeScopePop(ctx);
         if(ctx->scopes.count == 0) return;
         
         if(ctx->indent > 0) {
-            if(((scope->type == SerializeScope_Array) && (scope->array_elem_idx != 0)) ||
-               ((scope->type == SerializeScope_Object) && !view_Eq(scope->current_elem, VIEW(""))))
+            if(((popped_scope_type == SerializeScope_Array) && 
+                (popped_scope_array_elem_idx != 0)) ||
+               ((popped_scope_type == SerializeScope_Object) && 
+                !view_Eq(popped_scope_current_elem, VIEW(""))))
             {
                 sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
             } 
