@@ -99,7 +99,7 @@ int main(int argc, char **argv)
 
 ### vl_serialize.h:
 ```c
-// get a context, here you specify JSON or XML
+// get a context, here you specify JSON, XML or TOML
 // indent controls how many spaces to add (indent = 0 or unspecified means everything in the same line)
 vl_serialize_context ctx = GetSerializeContext(SerializeType_JSON, .indent = 2);
 
@@ -145,4 +145,6 @@ Check ErrorNumber when errors occur.
 ### Licences
 viclib.h is licenced under MIT, as shown in the file itself. You are free to change the name of the file if you modify it, just keep the license as "original viclib license by Victor Lopez:\n>mit license here<".
 
-[vl_build.h]() © 2024 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+[vl_build.h](https://github.com/victor-Lopez25/viclib) © 2024 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+
+[vl_serialize.h](https://github.com/victor-Lopez25/viclib) © 2024 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0)
