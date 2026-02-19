@@ -67,7 +67,7 @@ int main()
         fprintf(stderr, "Could not read file '%s': %s\n", file, VL_GetError());
         return 1;
     }
-    view v = view_FromParts(data, filesize);
+    view v = ViewFromParts(data, filesize);
     printf(VIEW_FMT"\n", VIEW_ARG(v)); // print the entire file
     return 0;
 }
