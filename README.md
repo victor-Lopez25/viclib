@@ -26,6 +26,7 @@ Serialization library to serialize data into textual formats.
 Supported formats:
  - JSON
  - XML
+ - TOML
 
 To download the header only libs:
 ```console
