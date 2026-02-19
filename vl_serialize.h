@@ -27,7 +27,7 @@
 
 typedef enum {
     SerializeType_JSON,
-    SerializeType_C_Literal,
+    SerializeType_C99_Initializer,
     SerializeType_XML,
     SerializeType_TOML,
 } vl_serialize_type;
@@ -271,7 +271,7 @@ static void JSON_ArrayEnd(vl_serialize_context *ctx)
 
 //////////////////////////////////////////////
 
-static void C_Literal_ElementBegin(vl_serialize_context *ctx)
+static void C99_Initializer_ElementBegin(vl_serialize_context *ctx)
 {
     if(ctx->scopes.count > 0) {
         vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
@@ -286,7 +286,7 @@ static void C_Literal_ElementBegin(vl_serialize_context *ctx)
     }
 }
 
-static void C_Literal_AttributeNameView(vl_serialize_context *ctx, view name)
+static void C99_Initializer_AttributeNameView(vl_serialize_context *ctx, view name)
 {
     ctx->ElementBegin(ctx);
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
@@ -299,7 +299,7 @@ static void C_Literal_AttributeNameView(vl_serialize_context *ctx, view name)
     scope->did_key = true;
 }
 
-static void C_Literal_ArrayBeginView(vl_serialize_context *ctx, view v)
+static void C99_Initializer_ArrayBeginView(vl_serialize_context *ctx, view v)
 {
     (void)v; // NOTE: JSON doesn't give a name to array elements
     ctx->ElementBegin(ctx);
@@ -307,7 +307,7 @@ static void C_Literal_ArrayBeginView(vl_serialize_context *ctx, view v)
     VL__SerializeScopePush(ctx, SerializeScope_Array);
 }
 
-static void C_Literal_ArrayEnd(vl_serialize_context *ctx)
+static void C99_Initializer_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Last C literal element was not an array and called VL_ArrayEnd");
@@ -583,15 +583,15 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
             result.should_quote_strings = true;
         } break;
 
-        case SerializeType_C_Literal: {
+        case SerializeType_C99_Initializer: {
             result.ObjectBegin = JSON_ObjectBegin;
-            result.AttributeNameView = C_Literal_AttributeNameView;
+            result.AttributeNameView = C99_Initializer_AttributeNameView;
             result.ObjectEnd = JSON_ObjectEnd;
 
-            result.ArrayBeginView = C_Literal_ArrayBeginView;
-            result.ArrayEnd = C_Literal_ArrayEnd;
+            result.ArrayBeginView = C99_Initializer_ArrayBeginView;
+            result.ArrayEnd = C99_Initializer_ArrayEnd;
 
-            result.ElementBegin = C_Literal_ElementBegin;
+            result.ElementBegin = C99_Initializer_ElementBegin;
             result.ElementEnd = JSON_ElementEnd;
             result.should_quote_strings = true;
         } break;

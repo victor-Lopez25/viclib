@@ -11,7 +11,7 @@ int main(int argc, char **argv)
     //vl_serialize_context ctx = GetSerializeContext(SerializeType_JSON, .indent = 2, .float_fmt = "%+lg");
     //vl_serialize_context ctx = GetSerializeContext(SerializeType_XML, .indent = 2);
     //vl_serialize_context ctx = GetSerializeContext(SerializeType_TOML, .indent = 2);
-    vl_serialize_context ctx = GetSerializeContext(SerializeType_C_Literal, .indent = 2);
+    vl_serialize_context ctx = GetSerializeContext(SerializeType_C99_Initializer, .indent = 2);
 
     VL_ObjectBegin(&ctx);
         VL_AttributeName(&ctx, "somenullobj");
