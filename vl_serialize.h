@@ -49,19 +49,21 @@ typedef struct {
 typedef struct {
     vl_serialize_type type;
     uint8_t indent;
+    const char *float_fmt; // default is "%lf"
 } GetSerializeContext_opts;
 
 typedef struct vl_serialize_context vl_serialize_context;
 struct vl_serialize_context {
     vl_serialize_type type;
     string_builder output;
+    view current_elem;
 
     struct {
         vl_serialize_scope *items;
         size_t count;
         size_t capacity;
     } scopes;
-    view current_elem;
+    const char *float_fmt;
     uint8_t indent;
     bool should_quote_strings;
     
@@ -515,6 +517,7 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
     vl_serialize_context result = {0};
     result.indent = opt.indent;
     result.type = opt.type;
+    result.float_fmt = opt.float_fmt ? opt.float_fmt : "%lf";
     switch(opt.type) {
         case SerializeType_JSON: {
             result.ObjectBegin = JSON_ObjectBegin;
@@ -601,7 +604,7 @@ SERIALIZE_PROC void VL_SerializeFloat(vl_serialize_context *ctx, double val)
     if(isnan(val - val)) { /* check if val is NaN or Inf */
         sb_Appendf(&ctx->output, "null");
     } else {
-        sb_Appendf(&ctx->output, "%lf", val);
+        sb_Appendf(&ctx->output, ctx->float_fmt, val);
     }
     ctx->ElementEnd(ctx);
 }
