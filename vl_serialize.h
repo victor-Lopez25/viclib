@@ -1,5 +1,5 @@
 // [vl_serialize.h](https://github.com/victor-Lopez25/viclib) © 2024 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0)
-// version: 1.2.1
+// version: 1.2.2
 #ifndef VL_SERIALIZE_H
 #define VL_SERIALIZE_H
 
