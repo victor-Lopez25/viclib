@@ -23,11 +23,11 @@
 
 /* This library will only print utf8 strings */
 
-// TODO: Make unions for scope, context with a struct for each serialization type
-// TODO: Remove trailing newlines (at the end) for TOML generation
+// TODO: Remove trailing newlines (at the end) of TOML generation
 
 typedef enum {
     SerializeType_JSON,
+    SerializeType_C_Literal,
     SerializeType_XML,
     SerializeType_TOML,
 } vl_serialize_type;
@@ -240,7 +240,7 @@ static void JSON_AttributeNameView(vl_serialize_context *ctx, view name)
 static void JSON_ObjectEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
-    AssertMsg(scope->type == SerializeScope_Object, "Error: Last json element was not an array and called VL_ObjectEnd");
+    AssertMsg(scope->type == SerializeScope_Object, "Error: Last element was not an array and called VL_ObjectEnd");
     if(ctx->indent > 0 && scope->prev_needs_comma) {
         sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
     }
@@ -265,6 +265,56 @@ static void JSON_ArrayEnd(vl_serialize_context *ctx)
         sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
     }
     da_Append(&ctx->output, ']');
+    VL__SerializeScopePop(ctx);
+    ctx->ElementEnd(ctx);
+}
+
+//////////////////////////////////////////////
+
+static void C_Literal_ElementBegin(vl_serialize_context *ctx)
+{
+    if(ctx->scopes.count > 0) {
+        vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
+        if(scope->prev_needs_comma && !scope->did_key) {
+            da_Append(&ctx->output, ',');
+        }
+
+        if(scope->did_key) sb_Appendf(&ctx->output, ctx->indent ? " = " : "=");
+        else if(ctx->indent) {
+            sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->scopes.count*ctx->indent), "");
+        }
+    }
+}
+
+static void C_Literal_AttributeNameView(vl_serialize_context *ctx, view name)
+{
+    ctx->ElementBegin(ctx);
+    AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
+    vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
+    AssertMsg(scope->type == SerializeScope_Object, "Error: Must be in an object to make `key = value` pairs");
+    AssertMsg(!scope->did_key, "Error: Can only have key-value pairs, no double keys");
+    
+    da_Append(&ctx->output, '.');
+    VL__SerializeViewNoElement(ctx, name);
+    scope->did_key = true;
+}
+
+static void C_Literal_ArrayBeginView(vl_serialize_context *ctx, view v)
+{
+    (void)v; // NOTE: JSON doesn't give a name to array elements
+    ctx->ElementBegin(ctx);
+    da_Append(&ctx->output, '{');
+    VL__SerializeScopePush(ctx, SerializeScope_Array);
+}
+
+static void C_Literal_ArrayEnd(vl_serialize_context *ctx)
+{
+    vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
+    AssertMsg(scope->type == SerializeScope_Array, "Error: Last C literal element was not an array and called VL_ArrayEnd");
+    if(ctx->indent > 0 && scope->prev_needs_comma) {
+        sb_Appendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
+    }
+    da_Append(&ctx->output, '}');
     VL__SerializeScopePop(ctx);
     ctx->ElementEnd(ctx);
 }
@@ -529,6 +579,19 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
             result.ArrayEnd = JSON_ArrayEnd;
 
             result.ElementBegin = JSON_ElementBegin;
+            result.ElementEnd = JSON_ElementEnd;
+            result.should_quote_strings = true;
+        } break;
+
+        case SerializeType_C_Literal: {
+            result.ObjectBegin = JSON_ObjectBegin;
+            result.AttributeNameView = C_Literal_AttributeNameView;
+            result.ObjectEnd = JSON_ObjectEnd;
+
+            result.ArrayBeginView = C_Literal_ArrayBeginView;
+            result.ArrayEnd = C_Literal_ArrayEnd;
+
+            result.ElementBegin = C_Literal_ElementBegin;
             result.ElementEnd = JSON_ElementEnd;
             result.should_quote_strings = true;
         } break;

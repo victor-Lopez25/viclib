@@ -25,6 +25,7 @@ Header-only library which does some basic stuff you might want in a lot of progr
 Serialization library to serialize data into textual formats.
 Supported formats:
  - JSON
+ - C Literals
  - XML
  - TOML
 
@@ -99,7 +100,7 @@ int main(int argc, char **argv)
 
 ### vl_serialize.h:
 ```c
-// get a context, here you specify JSON, XML or TOML
+// get a context, here you specify JSON, C_Literal, XML or TOML
 // indent controls how many spaces to add (indent = 0 or unspecified means everything in the same line)
 vl_serialize_context ctx = GetSerializeContext(SerializeType_JSON, .indent = 2);
 
