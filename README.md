@@ -87,7 +87,7 @@ int main(int argc, char **argv)
     vl_cmd cmd = {0};
     VL_cc(&cmd); // chooses the compiler you used to compile this by default
     VL_ccOutput(&cmd, "test" VL_EXE_EXTENSION); // add an output, on msvc it will add "/Fe:<output>", on gcc/clang it will add "-o", "<output>"
-    cmd_Append(&cmd, "src/main.c"); // add source files, or any other arguments
+    CmdAppend(&cmd, "src/main.c"); // add source files, or any other arguments
     VL_ccWarnings(&cmd); // add warnings for each compiler; msvc -> "-W4", gcc/clang -> "-Wall", "-Wextra"
     VL_ccDebug(&cmd); // add debug info for each compiler; msvc -> "-Zi", gcc/clang -> "-g"
 
