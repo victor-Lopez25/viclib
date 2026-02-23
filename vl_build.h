@@ -1907,7 +1907,7 @@ static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd 
         // But do we actually care? It's a one off leak anyway...
         vl_cmd cmdNull = {0};
         DaAppendMany(&cmdNull, cmd.items, cmd.count);
-        cmd_Append(&cmdNull, NULL);
+        CmdAppend(&cmdNull, NULL);
 
         if(execvp(cmd.items[0], (char * const*) cmdNull.items) < 0) {
             VL_Log(VL_ERROR, "Could not exec child process for %s: %s", cmd.items[0], strerror(errno));
