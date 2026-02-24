@@ -17,7 +17,7 @@ void TestReadEntireFile(void)
 void TestReadFileChunk(void)
 {
     u8 tmpBuffer[128];
-    file_chunk Chunk = {
+    vl_file_chunk Chunk = {
         .Buffer = tmpBuffer,
         .BufferSize = sizeof(tmpBuffer),
     };

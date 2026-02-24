@@ -17,6 +17,12 @@ int main(int argc, char **argv)
         "  ]\n"
         "}";
 
+    vl_serialize_context ctx = GetDeserializeContext(SerializeType_JSON, .buffer = data, .buffer_size = sizeof(data));
+
+    Assert(VL_ObjectBegin(&ctx));
+        /*  */
+    Assert(VL_ObjectEnd(&ctx));
+
 #if 0
     //vl_serialize_context ctx = GetSerializeContext(SerializeType_JSON, .indent = 2, .float_fmt = "%+lg");
     //vl_serialize_context ctx = GetSerializeContext(SerializeType_XML, .indent = 2);

@@ -599,9 +599,9 @@ typedef struct {
     u32 BufferSize;
     u8 *Buffer;
     size_t RemainingFileSize;
-} file_chunk;
+} vl_file_chunk;
 
-VLIBPROC bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize);
+VLIBPROC bool ReadFileChunk(vl_file_chunk *Chunk, const char *File, u32 *ChunkSize);
 
 VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size);
 VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size);
@@ -1644,7 +1644,7 @@ VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size)
 }
 RESTORE_WARNINGS
 
-bool ReadFileChunk(file_chunk *Chunk, const char *File, u32 *ChunkSize)
+bool ReadFileChunk(vl_file_chunk *Chunk, const char *File, u32 *ChunkSize)
 {
     AssertMsg(Chunk->Buffer && Chunk->BufferSize, "Requires a valid buffer and a buffer size");
     VL_ErrorNumber = 0;

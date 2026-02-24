@@ -25,6 +25,18 @@
 
 // TODO: Remove trailing newlines (at the end) of TOML generation
 
+#ifndef DEFAULT_PARSE_CHUNK_SIZE
+#define DEFAULT_PARSE_CHUNK_SIZE 4096
+#endif // DEFAULT_PARSE_CHUNK_SIZE
+
+#ifndef MIN_PARSE_CHUNK_SIZE
+#define MIN_PARSE_CHUNK_SIZE 1024
+#endif // MIN_PARSE_CHUNK_SIZE
+
+#if DEFAULT_PARSE_CHUNK_SIZE < MIN_PARSE_CHUNK_SIZE
+#error MIN_PARSE_CHUNK_SIZE must be less than DEFAULT_PARSE_CHUNK_SIZE
+#endif
+
 typedef enum {
     SerializeType_JSON,
     SerializeType_C99_Initializer,
@@ -53,39 +65,63 @@ typedef struct {
     const char *float_fmt; // default is "%lf"
 } GetSerializeContext_opts;
 
+typedef struct {
+    vl_serialize_type type;
+    const char *buffer;
+    uint32_t buffer_size;
+
+    const char *filename;
+    bool buffered_reads;
+} GetDeserializeContext_opts;
+
 typedef struct vl_serialize_context vl_serialize_context;
 struct vl_serialize_context {
     vl_serialize_type type;
     string_builder output;
-    view current_elem;
 
     struct {
         vl_serialize_scope *items;
         size_t count;
         size_t capacity;
     } scopes;
-    const char *float_fmt;
-    uint8_t indent;
-    bool should_quote_strings;
-    
+
     union {
         struct {
-            bool ignore_element_begin;
-            bool done_first_object;
-            bool should_push_scope;
-            vl_serialize_scope_type scope_type_to_push;
-            size_t count_non_newline_scopes;
-        } TOML;
+            view current_elem;
+            const char *float_fmt;
+            uint8_t indent;
+            bool should_quote_strings;
+            
+            union {
+                struct {
+                    bool ignore_element_begin;
+                    bool done_first_object;
+                    bool should_push_scope;
+                    vl_serialize_scope_type scope_type_to_push;
+                    size_t count_non_newline_scopes;
+                } TOML;
+                struct {
+                    bool should_pop_scope;
+                } XML;
+            } as;
+        } serialize;
+
         struct {
-            bool should_pop_scope;
-        } XML;
+            vl_file_chunk file_chunk;
+            const char *filename;
+            size_t current_chunk_size;
+            size_t used_buffer_size;
+
+            bool fatal_error;
+            bool must_free_chunk_buffer;
+        } deserialize;
     } as;
 
-    void (*ObjectBegin)(vl_serialize_context *ctx);
+    bool (*ObjectBegin)(vl_serialize_context *ctx);
     void (*AttributeNameView)(vl_serialize_context *ctx, view name);
-    void (*ObjectEnd)(vl_serialize_context *ctx);
-    void (*ArrayBeginView)(vl_serialize_context *ctx, view name);
-    void (*ArrayEnd)(vl_serialize_context *ctx);
+    bool (*ObjectEnd)(vl_serialize_context *ctx);
+    bool (*ArrayBeginView)(vl_serialize_context *ctx, view name);
+    bool (*ArrayEnd)(vl_serialize_context *ctx);
 
     // TODO: SerializeOpNull ????
     // TODO: SerializeOpBool
@@ -114,7 +150,11 @@ struct VL_ArrayBegin_opts {
     GetSerializeContext_Impl((GetSerializeContext_opts){.type = Type, __VA_ARGS__})
 SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext_opts opt);
 
-SERIALIZE_PROC void VL_ArrayBegin_Impl(struct VL_ArrayBegin_opts opt);
+#define GetDeserializeContext(Type, ...) \
+    GetDeserializeContext_Impl((GetDeserializeContext_opts){.type = Type, __VA_ARGS__})
+SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeContext_opts opt);
+
+SERIALIZE_PROC bool VL_ArrayBegin_Impl(struct VL_ArrayBegin_opts opt);
 SERIALIZE_PROC void VL_AttributeName(vl_serialize_context *ctx, const char *name);
 
 SERIALIZE_PROC void VL_SerializeNull(vl_serialize_context *ctx);
@@ -198,10 +238,10 @@ static void JSON_ElementBegin(vl_serialize_context *ctx)
         if(scope->prev_needs_comma && !scope->did_key) {
             DaAppend(&ctx->output, ',');
         }
-        if(ctx->indent) {
+        if(ctx->as.serialize.indent) {
             if(scope->did_key) DaAppend(&ctx->output, ' ');
             else {
-                SbAppendf(&ctx->output, "\n%*s", (int)(ctx->scopes.count*ctx->indent), "");
+                SbAppendf(&ctx->output, "\n%*s", (int)(ctx->scopes.count*ctx->as.serialize.indent), "");
             }
         }
     }
@@ -216,11 +256,13 @@ static void JSON_ElementEnd(vl_serialize_context *ctx)
     }
 }
 
-static void JSON_ObjectBegin(vl_serialize_context *ctx)
+static bool JSON_ObjectBegin(vl_serialize_context *ctx)
 {
     ctx->ElementBegin(ctx);
     DaAppend(&ctx->output, '{');
     VL__SerializeScopePush(ctx, SerializeScope_Object);
+
+    return true;
 }
 
 static void JSON_AttributeNameView(vl_serialize_context *ctx, view name)
@@ -237,36 +279,42 @@ static void JSON_AttributeNameView(vl_serialize_context *ctx, view name)
     scope->did_key = true;
 }
 
-static void JSON_ObjectEnd(vl_serialize_context *ctx)
+static bool JSON_ObjectEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Object, "Error: Last element was not an array and called VL_ObjectEnd");
-    if(ctx->indent > 0 && scope->prev_needs_comma) {
-        SbAppendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
+    if(ctx->as.serialize.indent > 0 && scope->prev_needs_comma) {
+        SbAppendf(&ctx->output, "\n%*s", (int)(ctx->as.serialize.indent*(ctx->scopes.count - 1)), "");
     }
     DaAppend(&ctx->output, '}');
     VL__SerializeScopePop(ctx);
     ctx->ElementEnd(ctx);
+
+    return true;
 }
 
-static void JSON_ArrayBeginView(vl_serialize_context *ctx, view v)
+static bool JSON_ArrayBeginView(vl_serialize_context *ctx, view v)
 {
     (void)v; // NOTE: JSON doesn't give a name to array elements
     ctx->ElementBegin(ctx);
     DaAppend(&ctx->output, '[');
     VL__SerializeScopePush(ctx, SerializeScope_Array);
+
+    return true;
 }
 
-static void JSON_ArrayEnd(vl_serialize_context *ctx)
+static bool JSON_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Last json element was not an array and called VL_ArrayEnd");
-    if(ctx->indent > 0 && scope->prev_needs_comma) {
-        SbAppendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
+    if(ctx->as.serialize.indent > 0 && scope->prev_needs_comma) {
+        SbAppendf(&ctx->output, "\n%*s", (int)(ctx->as.serialize.indent*(ctx->scopes.count - 1)), "");
     }
     DaAppend(&ctx->output, ']');
     VL__SerializeScopePop(ctx);
     ctx->ElementEnd(ctx);
+
+    return true;
 }
 
 //////////////////////////////////////////////
@@ -279,9 +327,9 @@ static void C99_Initializer_ElementBegin(vl_serialize_context *ctx)
             DaAppend(&ctx->output, ',');
         }
 
-        if(scope->did_key) SbAppendf(&ctx->output, ctx->indent ? " = " : "=");
-        else if(ctx->indent) {
-            SbAppendf(&ctx->output, "\n%*s", (int)(ctx->scopes.count*ctx->indent), "");
+        if(scope->did_key) SbAppendf(&ctx->output, ctx->as.serialize.indent ? " = " : "=");
+        else if(ctx->as.serialize.indent) {
+            SbAppendf(&ctx->output, "\n%*s", (int)(ctx->scopes.count*ctx->as.serialize.indent), "");
         }
     }
 }
@@ -299,24 +347,28 @@ static void C99_Initializer_AttributeNameView(vl_serialize_context *ctx, view na
     scope->did_key = true;
 }
 
-static void C99_Initializer_ArrayBeginView(vl_serialize_context *ctx, view v)
+static bool C99_Initializer_ArrayBeginView(vl_serialize_context *ctx, view v)
 {
     (void)v; // NOTE: JSON doesn't give a name to array elements
     ctx->ElementBegin(ctx);
     DaAppend(&ctx->output, '{');
     VL__SerializeScopePush(ctx, SerializeScope_Array);
+
+    return true;
 }
 
-static void C99_Initializer_ArrayEnd(vl_serialize_context *ctx)
+static bool C99_Initializer_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Last C literal element was not an array and called VL_ArrayEnd");
-    if(ctx->indent > 0 && scope->prev_needs_comma) {
-        SbAppendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
+    if(ctx->as.serialize.indent > 0 && scope->prev_needs_comma) {
+        SbAppendf(&ctx->output, "\n%*s", (int)(ctx->as.serialize.indent*(ctx->scopes.count - 1)), "");
     }
     DaAppend(&ctx->output, '}');
     VL__SerializeScopePop(ctx);
     ctx->ElementEnd(ctx);
+
+    return true;
 }
 
 //////////////////////////////////////////////
@@ -326,8 +378,8 @@ static void XML_ElementBegin(vl_serialize_context *ctx)
     if(ctx->scopes.count > 0) {
         vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
         if(scope->prev_needs_comma) {
-            if(ctx->indent) {
-                if(!scope->did_key) SbAppendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
+            if(ctx->as.serialize.indent) {
+                if(!scope->did_key) SbAppendf(&ctx->output, "\n%*s", (int)(ctx->as.serialize.indent*(ctx->scopes.count - 1)), "");
             }
         }
 
@@ -348,8 +400,8 @@ static void XML_ElementEnd(vl_serialize_context *ctx)
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     scope->prev_needs_comma = true;
     scope->did_key = false;
-    if(ctx->as.XML.should_pop_scope) {
-        ctx->as.XML.should_pop_scope = false;
+    if(ctx->as.serialize.as.XML.should_pop_scope) {
+        ctx->as.serialize.as.XML.should_pop_scope = false;
 
         vl_serialize_scope_type popped_scope_type = scope->type;
         view popped_scope_current_elem = scope->current_elem;
@@ -357,13 +409,13 @@ static void XML_ElementEnd(vl_serialize_context *ctx)
         VL__SerializeScopePop(ctx);
         if(ctx->scopes.count == 0) return;
         
-        if(ctx->indent > 0) {
+        if(ctx->as.serialize.indent > 0) {
             if(((popped_scope_type == SerializeScope_Array) && 
                 (popped_scope_array_elem_idx != 0)) ||
                ((popped_scope_type == SerializeScope_Object) && 
                 !ViewEq(popped_scope_current_elem, VIEW(""))))
             {
-                SbAppendf(&ctx->output, "\n%*s", (int)(ctx->indent*(ctx->scopes.count - 1)), "");
+                SbAppendf(&ctx->output, "\n%*s", (int)(ctx->as.serialize.indent*(ctx->scopes.count - 1)), "");
             } 
         }
 
@@ -386,11 +438,13 @@ static void XML_ElementEnd(vl_serialize_context *ctx)
     }
 }
 
-static void XML_ObjectBegin(vl_serialize_context *ctx)
+static bool XML_ObjectBegin(vl_serialize_context *ctx)
 {
     ctx->ElementBegin(ctx);
     vl_serialize_scope *scope = VL__SerializeScopePush(ctx, SerializeScope_Object);
     scope->prev_needs_comma = true;
+
+    return true;
 }
 
 static void XML_AttributeNameView(vl_serialize_context *ctx, view name)
@@ -406,32 +460,38 @@ static void XML_AttributeNameView(vl_serialize_context *ctx, view name)
     scope->did_key = true;
 }
 
-static void XML_ObjectEnd(vl_serialize_context *ctx)
+static bool XML_ObjectEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Object, "Error: Last json element was not an array and called VL_ArrayEnd");
-    ctx->as.XML.should_pop_scope = true;
+    ctx->as.serialize.as.XML.should_pop_scope = true;
     ctx->ElementEnd(ctx);
     scope = &ctx->scopes.items[ctx->scopes.count - 1];
     scope->prev_needs_comma = true;
+
+    return true;
 }
 
-static void XML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
+static bool XML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
 {
     ctx->ElementBegin(ctx);
     vl_serialize_scope *scope = VL__SerializeScopePush(ctx, SerializeScope_Array);
     scope->array_elem_name = elem_name;
     scope->prev_needs_comma = true;
+
+    return true;
 }
 
-static void XML_ArrayEnd(vl_serialize_context *ctx)
+static bool XML_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Outer scope was not an array and called VL_ArrayEnd");
-    ctx->as.XML.should_pop_scope = true;
+    ctx->as.serialize.as.XML.should_pop_scope = true;
     ctx->ElementEnd(ctx);
     vl_serialize_scope *outer_scope = &ctx->scopes.items[ctx->scopes.count - 1];
     outer_scope->prev_needs_comma = true;
+
+    return true;
 }
 
 //////////////////////////////////////////////
@@ -446,14 +506,14 @@ static void TOML_ElementBegin(vl_serialize_context *ctx)
     }
     
     vl_serialize_scope *scope;
-    if(ctx->as.TOML.should_push_scope) {
-        scope = VL__SerializeScopePush(ctx, ctx->as.TOML.scope_type_to_push);
+    if(ctx->as.serialize.as.TOML.should_push_scope) {
+        scope = VL__SerializeScopePush(ctx, ctx->as.serialize.as.TOML.scope_type_to_push);
     } else {
         scope = &ctx->scopes.items[ctx->scopes.count - 1];
     }
 
-    if(ctx->as.TOML.ignore_element_begin) {
-        ctx->as.TOML.ignore_element_begin = false;
+    if(ctx->as.serialize.as.TOML.ignore_element_begin) {
+        ctx->as.serialize.as.TOML.ignore_element_begin = false;
         return;
     }
 
@@ -461,13 +521,13 @@ static void TOML_ElementBegin(vl_serialize_context *ctx)
         DaAppend(&ctx->output, outer_scope_needs_newline ? '\n' : ',');
     }
 
-    if(ctx->indent && !outer_scope_needs_newline) {
-        SbAppendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->as.TOML.count_non_newline_scopes), "");
+    if(ctx->as.serialize.indent && !outer_scope_needs_newline) {
+        SbAppendf(&ctx->output, "\n%*s", (int)(ctx->as.serialize.indent*ctx->as.serialize.as.TOML.count_non_newline_scopes), "");
     }
 
     if(outer_scope_type == SerializeScope_Object) {
-        SbAppendf(&ctx->output, VIEW_FMT"%s", VIEW_ARG(ctx->current_elem),
-            ctx->indent ? " = " : "=");
+        SbAppendf(&ctx->output, VIEW_FMT"%s", VIEW_ARG(ctx->as.serialize.current_elem),
+            ctx->as.serialize.indent ? " = " : "=");
     }
 }
 
@@ -483,30 +543,32 @@ static void TOML_ElementEnd(vl_serialize_context *ctx)
     }
 }
 
-static void TOML_ObjectBegin(vl_serialize_context *ctx)
+static bool TOML_ObjectBegin(vl_serialize_context *ctx)
 {
-    if(ctx->scopes.count <= 1) ctx->as.TOML.ignore_element_begin = true;
-    ctx->as.TOML.scope_type_to_push = SerializeScope_Object;
-    ctx->as.TOML.should_push_scope = true;
+    if(ctx->scopes.count <= 1) ctx->as.serialize.as.TOML.ignore_element_begin = true;
+    ctx->as.serialize.as.TOML.scope_type_to_push = SerializeScope_Object;
+    ctx->as.serialize.as.TOML.should_push_scope = true;
     ctx->ElementBegin(ctx);
-    ctx->as.TOML.should_push_scope = false;
+    ctx->as.serialize.as.TOML.should_push_scope = false;
 
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     if(ctx->scopes.count == 1) {
         scope->scope_needs_newline = true;
     } else if(ctx->scopes.count > 2 || ctx->scopes.items[1].type == SerializeScope_Array) {
-        ctx->as.TOML.count_non_newline_scopes++;
+        ctx->as.serialize.as.TOML.count_non_newline_scopes++;
         DaAppend(&ctx->output, '{');
     } else if(ctx->scopes.count == 2) {
-        if(!ctx->as.TOML.done_first_object) {
-            ctx->as.TOML.done_first_object = true;
-            SbAppendf(&ctx->output, "\n["VIEW_FMT"]\n", VIEW_ARG(ctx->current_elem));
+        if(!ctx->as.serialize.as.TOML.done_first_object) {
+            ctx->as.serialize.as.TOML.done_first_object = true;
+            SbAppendf(&ctx->output, "\n["VIEW_FMT"]\n", VIEW_ARG(ctx->as.serialize.current_elem));
         } else {
-            SbAppendf(&ctx->output, "["VIEW_FMT"]\n", VIEW_ARG(ctx->current_elem));
+            SbAppendf(&ctx->output, "["VIEW_FMT"]\n", VIEW_ARG(ctx->as.serialize.current_elem));
         }
 
         scope->scope_needs_newline = true;
     }
+
+    return true;
 }
 
 static void TOML_AttributeNameView(vl_serialize_context *ctx, view name)
@@ -515,50 +577,56 @@ static void TOML_AttributeNameView(vl_serialize_context *ctx, view name)
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Object, "Error: Must be in an object to make `key = value` pairs");
-    ctx->current_elem = name;
+    ctx->as.serialize.current_elem = name;
 }
 
-static void TOML_ObjectEnd(vl_serialize_context *ctx)
+static bool TOML_ObjectEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Object, "Error: Last toml element was not an object and called VL_ObjectEnd");
     if(!scope->scope_needs_newline) {
-        ctx->as.TOML.count_non_newline_scopes--;
-        if(ctx->indent > 0 && scope->prev_needs_comma) {
-            SbAppendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->as.TOML.count_non_newline_scopes), "");
+        ctx->as.serialize.as.TOML.count_non_newline_scopes--;
+        if(ctx->as.serialize.indent > 0 && scope->prev_needs_comma) {
+            SbAppendf(&ctx->output, "\n%*s", (int)(ctx->as.serialize.indent*ctx->as.serialize.as.TOML.count_non_newline_scopes), "");
         }
         DaAppend(&ctx->output, '}');
     }
     
     VL__SerializeScopePop(ctx);
     ctx->ElementEnd(ctx);
+
+    return true;
 }
 
-static void TOML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
+static bool TOML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
 {
     (void)elem_name; // NOTE: TOML doesn't give a name to array elements
     AssertMsg(ctx->scopes.count > 0, "Error: An outmost scope of an array is not allowed in TOML");
 
-    ctx->as.TOML.scope_type_to_push = SerializeScope_Array;
-    ctx->as.TOML.should_push_scope = true;
+    ctx->as.serialize.as.TOML.scope_type_to_push = SerializeScope_Array;
+    ctx->as.serialize.as.TOML.should_push_scope = true;
     ctx->ElementBegin(ctx);
-    ctx->as.TOML.should_push_scope = false;
+    ctx->as.serialize.as.TOML.should_push_scope = false;
 
-    ctx->as.TOML.count_non_newline_scopes++;
+    ctx->as.serialize.as.TOML.count_non_newline_scopes++;
     DaAppend(&ctx->output, '[');
+
+    return true;
 }
 
-static void TOML_ArrayEnd(vl_serialize_context *ctx)
+static bool TOML_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Last toml element was not an array and called VL_ArrayEnd");
-    ctx->as.TOML.count_non_newline_scopes--;
-    if(ctx->indent > 0 && scope->prev_needs_comma) {
-        SbAppendf(&ctx->output, "\n%*s", (int)(ctx->indent*ctx->as.TOML.count_non_newline_scopes), "");
+    ctx->as.serialize.as.TOML.count_non_newline_scopes--;
+    if(ctx->as.serialize.indent > 0 && scope->prev_needs_comma) {
+        SbAppendf(&ctx->output, "\n%*s", (int)(ctx->as.serialize.indent*ctx->as.serialize.as.TOML.count_non_newline_scopes), "");
     }
     DaAppend(&ctx->output, ']');
     VL__SerializeScopePop(ctx);
     ctx->ElementEnd(ctx);
+
+    return true;
 }
 
 //////////////////////////////////////////////
@@ -566,9 +634,9 @@ static void TOML_ArrayEnd(vl_serialize_context *ctx)
 SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext_opts opt)
 {
     vl_serialize_context result = {0};
-    result.indent = opt.indent;
+    result.as.serialize.indent = opt.indent;
     result.type = opt.type;
-    result.float_fmt = opt.float_fmt ? opt.float_fmt : "%lf";
+    result.as.serialize.float_fmt = opt.float_fmt ? opt.float_fmt : "%lf";
     switch(opt.type) {
         case SerializeType_JSON: {
             result.ObjectBegin = JSON_ObjectBegin;
@@ -580,7 +648,7 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
 
             result.ElementBegin = JSON_ElementBegin;
             result.ElementEnd = JSON_ElementEnd;
-            result.should_quote_strings = true;
+            result.as.serialize.should_quote_strings = true;
         } break;
 
         case SerializeType_C99_Initializer: {
@@ -593,7 +661,7 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
 
             result.ElementBegin = C99_Initializer_ElementBegin;
             result.ElementEnd = JSON_ElementEnd;
-            result.should_quote_strings = true;
+            result.as.serialize.should_quote_strings = true;
         } break;
 
         case SerializeType_XML: {
@@ -606,7 +674,7 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
 
             result.ElementBegin = XML_ElementBegin;
             result.ElementEnd = XML_ElementEnd;
-            result.should_quote_strings = false;
+            result.as.serialize.should_quote_strings = false;
         } break;
 
         case SerializeType_TOML: {
@@ -619,7 +687,7 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
 
             result.ElementBegin = TOML_ElementBegin;
             result.ElementEnd = TOML_ElementEnd;            
-            result.should_quote_strings = true;
+            result.as.serialize.should_quote_strings = true;
         } break;
 
         default: {
@@ -630,15 +698,162 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
     return result;
 }
 
+//////////////////////////////////////////////
+
+static inline void VL__DeserializeFetchNextChunk(vl_serialize_context *ctx)
+{
+    if((ctx->as.deserialize.file_chunk.RemainingFileSize > 0) &&
+       (ctx->as.deserialize.used_buffer_size > 
+        (ctx->as.deserialize.current_chunk_size - MIN_PARSE_CHUNK_SIZE)))
+    {
+        size_t prev_remaining = 
+            ctx->as.deserialize.current_chunk_size - ctx->as.deserialize.used_buffer_size;
+        
+        /* move start <-- end */
+        mem_copy(ctx->as.deserialize.file_chunk.Buffer,
+            ctx->as.deserialize.file_chunk.Buffer + ctx->as.deserialize.used_buffer_size,
+            prev_remaining);
+
+        uint8_t *buffer = ctx->as.deserialize.file_chunk.Buffer;
+        size_t buffer_size = ctx->as.deserialize.file_chunk.BufferSize;
+
+        ctx->as.deserialize.file_chunk.Buffer += prev_remaining;
+        ctx->as.deserialize.file_chunk.BufferSize -= (uint32_t)prev_remaining;
+
+        uint32_t curr_read_size;
+        ReadFileChunk(&ctx->as.deserialize.file_chunk, ctx->as.deserialize.filename, &curr_read_size);
+
+        ctx->as.deserialize.file_chunk.Buffer = buffer;
+        ctx->as.deserialize.file_chunk.BufferSize = (uint32_t)buffer_size;
+        ctx->as.deserialize.current_chunk_size = curr_read_size + prev_remaining;
+    }
+}
+
+static bool VL__DeserializeGetRemaining(vl_serialize_context *ctx, view *remaining)
+{
+    if(ctx->as.deserialize.fatal_error) return false;
+
+    VL__DeserializeFetchNextChunk(ctx);
+
+    const char *start = (const char*)ctx->as.deserialize.file_chunk.Buffer + ctx->as.deserialize.used_buffer_size;
+    size_t remaining_size = ctx->as.deserialize.current_chunk_size - ctx->as.deserialize.used_buffer_size;
+
+    *remaining = ViewFromParts(start, remaining_size);
+    *remaining = ViewTrimLeft(*remaining);
+
+    return remaining_size > 0;
+}
+
+//////////////////////////////////////////////
+
+static bool JSON_ExpectObjectBegin(vl_serialize_context *ctx)
+{
+    view remaining;
+    if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
+
+    bool found_expected = (remaining.count > 0) && (remaining.items[0] == '{');
+    ctx->as.deserialize.fatal_error = !found_expected;
+    ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
+    return found_expected;
+}
+
+static bool JSON_ExpectObjectEnd(vl_serialize_context *ctx)
+{
+    view remaining;
+    if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
+
+    bool found_expected = (remaining.count > 0) && (remaining.items[0] == '}');
+    ctx->as.deserialize.fatal_error = !found_expected;
+    ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
+    return found_expected;
+}
+
+static bool JSON_ExpectArrayBegin(vl_serialize_context *ctx, view name)
+{
+    (void)name;
+    view remaining;
+    if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
+
+    bool found_expected = (remaining.count > 0) && (remaining.items[0] == '[');
+    ctx->as.deserialize.fatal_error = !found_expected;    
+    ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
+    return found_expected;
+}
+
+static bool JSON_ExpectArrayEnd(vl_serialize_context *ctx)
+{
+    view remaining;
+    if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
+
+    bool found_expected = (remaining.count > 0) && (remaining.items[0] == ']');
+    ctx->as.deserialize.fatal_error = !found_expected;    
+    ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
+    return found_expected;
+}
+
+//////////////////////////////////////////////
+
+SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeContext_opts opt)
+{
+    AssertMsgAlways(opt.buffer || opt.filename, "Error: Must be given a buffer with data or a file to read from");
+    vl_serialize_context result = {0};
+    result.type = opt.type;
+    if(!opt.buffer) {
+        if(opt.buffer_size < DEFAULT_PARSE_CHUNK_SIZE) {
+            opt.buffer_size = DEFAULT_PARSE_CHUNK_SIZE;
+        }
+        opt.buffer = malloc(opt.buffer_size);
+        mem_zero((void*)opt.buffer, opt.buffer_size);
+        result.as.deserialize.must_free_chunk_buffer = true;
+    } else if(opt.filename) {
+        AssertMsgAlways(opt.buffer_size >= DEFAULT_PARSE_CHUNK_SIZE, "Error: buffer size must be at least DEFAULT_PARSE_CHUNK_SIZE size");
+    }
+    result.as.deserialize.file_chunk.Buffer = (uint8_t*)opt.buffer;
+    result.as.deserialize.file_chunk.BufferSize = opt.buffer_size;
+
+    if(opt.filename) {
+        result.as.deserialize.filename = opt.filename;
+        uint32_t curr_read_size;
+        ReadFileChunk(&result.as.deserialize.file_chunk, opt.filename, &curr_read_size);
+        result.as.deserialize.current_chunk_size = curr_read_size;
+    } else {
+        result.as.deserialize.current_chunk_size = opt.buffer_size;
+    }
+
+    switch(opt.type) {
+        case SerializeType_JSON: {
+            result.ObjectBegin = JSON_ExpectObjectBegin;
+            result.ObjectEnd = JSON_ExpectObjectEnd;
+
+            result.ArrayBeginView = JSON_ExpectArrayBegin;
+            result.ArrayEnd = JSON_ExpectArrayEnd;
+        } break;
+
+        case SerializeType_XML:
+        case SerializeType_TOML:
+        case SerializeType_C99_Initializer: {
+            AssertMsgAlways(false, "Deserializing not supported for chosen type");
+        } break;
+
+        default: {
+            AssertMsg(false, "Unknown serialize type");
+        } break;
+    }
+
+    return result;
+}
+
+//////////////////////////////////////////////
+
 SERIALIZE_PROC void VL_AttributeName(vl_serialize_context *ctx, const char *name)
 {
     ctx->AttributeNameView(ctx, ViewFromCstr(name));
 }
 
-SERIALIZE_PROC void VL_ArrayBegin_Impl(struct VL_ArrayBegin_opts opt)
+SERIALIZE_PROC bool VL_ArrayBegin_Impl(struct VL_ArrayBegin_opts opt)
 {
-    opt.ctx->ArrayBeginView(opt.ctx,
-        opt.elem_name ? ViewFromCstr(opt.elem_name) : VIEW(""));
+    return opt.ctx->ArrayBeginView(opt.ctx,
+            opt.elem_name ? ViewFromCstr(opt.elem_name) : VIEW(""));
 }
 
 SERIALIZE_PROC void VL_SerializeNull(vl_serialize_context *ctx)
@@ -668,7 +883,7 @@ SERIALIZE_PROC void VL_SerializeFloat(vl_serialize_context *ctx, double val)
     if(isnan(val - val)) { /* check if val is NaN or Inf */
         SbAppendf(&ctx->output, "null");
     } else {
-        SbAppendf(&ctx->output, ctx->float_fmt, val);
+        SbAppendf(&ctx->output, ctx->as.serialize.float_fmt, val);
     }
     ctx->ElementEnd(ctx);
 }
@@ -681,7 +896,7 @@ SERIALIZE_PROC void VL_SerializeString(vl_serialize_context *ctx, const char *s)
 SERIALIZE_PROC void VL_SerializeView(vl_serialize_context *ctx, view v)
 {
     ctx->ElementBegin(ctx);
-    if(ctx->should_quote_strings) {
+    if(ctx->as.serialize.should_quote_strings) {
         DaAppend(&ctx->output, '"');
         VL__SerializeViewNoElement(ctx, v);
         DaAppend(&ctx->output, '"');
