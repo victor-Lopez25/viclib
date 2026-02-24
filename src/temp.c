@@ -10,7 +10,7 @@ int main(int argc, char **argv)
 
     char data[] = 
         "{\n"
-        "  \"somenullobj\": null\n"
+        "  \"somenullobj\": null,\n"
         "  \"boolean-values\": [\n"
         "    true,\n"
         "    false\n"
@@ -20,6 +20,9 @@ int main(int argc, char **argv)
     vl_serialize_context ctx = GetDeserializeContext(SerializeType_JSON, .buffer = data, .buffer_size = sizeof(data));
 
     Assert(VL_ObjectBegin(&ctx));
+        if(VL_AttributeName(&ctx, "somenullobj")) {
+            /* VL_SerializeNull */
+        }
         /*  */
     Assert(VL_ObjectEnd(&ctx));
 

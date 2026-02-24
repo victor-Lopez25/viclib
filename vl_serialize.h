@@ -118,7 +118,7 @@ struct vl_serialize_context {
     } as;
 
     bool (*ObjectBegin)(vl_serialize_context *ctx);
-    void (*AttributeNameView)(vl_serialize_context *ctx, view name);
+    bool (*AttributeNameView)(vl_serialize_context *ctx, view name);
     bool (*ObjectEnd)(vl_serialize_context *ctx);
     bool (*ArrayBeginView)(vl_serialize_context *ctx, view name);
     bool (*ArrayEnd)(vl_serialize_context *ctx);
@@ -155,7 +155,7 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
 SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeContext_opts opt);
 
 SERIALIZE_PROC bool VL_ArrayBegin_Impl(struct VL_ArrayBegin_opts opt);
-SERIALIZE_PROC void VL_AttributeName(vl_serialize_context *ctx, const char *name);
+SERIALIZE_PROC bool VL_AttributeName(vl_serialize_context *ctx, const char *name);
 
 SERIALIZE_PROC void VL_SerializeNull(vl_serialize_context *ctx);
 
@@ -265,7 +265,7 @@ static bool JSON_ObjectBegin(vl_serialize_context *ctx)
     return true;
 }
 
-static void JSON_AttributeNameView(vl_serialize_context *ctx, view name)
+static bool JSON_AttributeNameView(vl_serialize_context *ctx, view name)
 {
     ctx->ElementBegin(ctx);
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
@@ -277,6 +277,8 @@ static void JSON_AttributeNameView(vl_serialize_context *ctx, view name)
     VL__SerializeViewNoElement(ctx, name);
     SbAppendf(&ctx->output, "\":");
     scope->did_key = true;
+
+    return true;
 }
 
 static bool JSON_ObjectEnd(vl_serialize_context *ctx)
@@ -334,7 +336,7 @@ static void C99_Initializer_ElementBegin(vl_serialize_context *ctx)
     }
 }
 
-static void C99_Initializer_AttributeNameView(vl_serialize_context *ctx, view name)
+static bool C99_Initializer_AttributeNameView(vl_serialize_context *ctx, view name)
 {
     ctx->ElementBegin(ctx);
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
@@ -345,11 +347,13 @@ static void C99_Initializer_AttributeNameView(vl_serialize_context *ctx, view na
     DaAppend(&ctx->output, '.');
     VL__SerializeViewNoElement(ctx, name);
     scope->did_key = true;
+
+    return true;
 }
 
 static bool C99_Initializer_ArrayBeginView(vl_serialize_context *ctx, view v)
 {
-    (void)v; // NOTE: JSON doesn't give a name to array elements
+    (void)v; // NOTE: C99 initializers don't give a name to array elements
     ctx->ElementBegin(ctx);
     DaAppend(&ctx->output, '{');
     VL__SerializeScopePush(ctx, SerializeScope_Array);
@@ -447,7 +451,7 @@ static bool XML_ObjectBegin(vl_serialize_context *ctx)
     return true;
 }
 
-static void XML_AttributeNameView(vl_serialize_context *ctx, view name)
+static bool XML_AttributeNameView(vl_serialize_context *ctx, view name)
 {
     ctx->ElementBegin(ctx);
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in a scope before adding an attribute");
@@ -458,12 +462,14 @@ static void XML_AttributeNameView(vl_serialize_context *ctx, view name)
     scope->current_elem = name;
     scope->prev_needs_comma = false;
     scope->did_key = true;
+
+    return true;
 }
 
 static bool XML_ObjectEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
-    AssertMsg(scope->type == SerializeScope_Object, "Error: Last json element was not an array and called VL_ArrayEnd");
+    AssertMsg(scope->type == SerializeScope_Object, "Error: Last XML element was not an array and called VL_ArrayEnd");
     ctx->as.serialize.as.XML.should_pop_scope = true;
     ctx->ElementEnd(ctx);
     scope = &ctx->scopes.items[ctx->scopes.count - 1];
@@ -571,13 +577,15 @@ static bool TOML_ObjectBegin(vl_serialize_context *ctx)
     return true;
 }
 
-static void TOML_AttributeNameView(vl_serialize_context *ctx, view name)
+static bool TOML_AttributeNameView(vl_serialize_context *ctx, view name)
 {
     //ctx->ElementBegin(ctx);
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Object, "Error: Must be in an object to make `key = value` pairs");
     ctx->as.serialize.current_elem = name;
+
+    return true;
 }
 
 static bool TOML_ObjectEnd(vl_serialize_context *ctx)
@@ -751,9 +759,29 @@ static bool JSON_ExpectObjectBegin(vl_serialize_context *ctx)
     view remaining;
     if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
 
-    bool found_expected = (remaining.count > 0) && (remaining.items[0] == '{');
+    bool found_expected = (remaining.items[0] == '{');
     ctx->as.deserialize.fatal_error = !found_expected;
     ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
+    return found_expected;
+}
+
+static bool JSON_ExpectAttributeName(vl_serialize_context *ctx, view name)
+{
+    view remaining;
+    if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
+
+    bool found_expected = (remaining.items[0] == '"');
+    ViewChopLeft(&remaining, 1);
+    found_expected = found_expected && ViewChopStartsWith(&remaining, name);
+    found_expected = found_expected && (remaining.count > 1) && (remaining.items[0] == '"');
+    ViewChopLeft(&remaining, 1);
+    remaining = ViewTrimLeft(remaining);
+    found_expected = found_expected && (remaining.count > 1) && (remaining.items[0] == ':');
+    
+    if(found_expected) {
+        ctx->as.deserialize.used_buffer_size = 
+            ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
+    }
     return found_expected;
 }
 
@@ -762,7 +790,7 @@ static bool JSON_ExpectObjectEnd(vl_serialize_context *ctx)
     view remaining;
     if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
 
-    bool found_expected = (remaining.count > 0) && (remaining.items[0] == '}');
+    bool found_expected = (remaining.items[0] == '}');
     ctx->as.deserialize.fatal_error = !found_expected;
     ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
     return found_expected;
@@ -774,7 +802,7 @@ static bool JSON_ExpectArrayBegin(vl_serialize_context *ctx, view name)
     view remaining;
     if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
 
-    bool found_expected = (remaining.count > 0) && (remaining.items[0] == '[');
+    bool found_expected = (remaining.items[0] == '[');
     ctx->as.deserialize.fatal_error = !found_expected;    
     ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
     return found_expected;
@@ -785,7 +813,7 @@ static bool JSON_ExpectArrayEnd(vl_serialize_context *ctx)
     view remaining;
     if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
 
-    bool found_expected = (remaining.count > 0) && (remaining.items[0] == ']');
+    bool found_expected = (remaining.items[0] == ']');
     ctx->as.deserialize.fatal_error = !found_expected;    
     ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
     return found_expected;
@@ -823,6 +851,7 @@ SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeCon
     switch(opt.type) {
         case SerializeType_JSON: {
             result.ObjectBegin = JSON_ExpectObjectBegin;
+            result.AttributeNameView = JSON_ExpectAttributeName;
             result.ObjectEnd = JSON_ExpectObjectEnd;
 
             result.ArrayBeginView = JSON_ExpectArrayBegin;
@@ -845,9 +874,9 @@ SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeCon
 
 //////////////////////////////////////////////
 
-SERIALIZE_PROC void VL_AttributeName(vl_serialize_context *ctx, const char *name)
+SERIALIZE_PROC bool VL_AttributeName(vl_serialize_context *ctx, const char *name)
 {
-    ctx->AttributeNameView(ctx, ViewFromCstr(name));
+    return ctx->AttributeNameView(ctx, ViewFromCstr(name));
 }
 
 SERIALIZE_PROC bool VL_ArrayBegin_Impl(struct VL_ArrayBegin_opts opt)
