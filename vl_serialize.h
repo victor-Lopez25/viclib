@@ -123,8 +123,9 @@ struct vl_serialize_context {
     bool (*ArrayBeginView)(vl_serialize_context *ctx, view name);
     bool (*ArrayEnd)(vl_serialize_context *ctx);
 
-    // TODO: SerializeOpNull ????
-    // TODO: SerializeOpBool
+    bool (*SerializeNull)(vl_serialize_context *ctx);
+    bool (*SerializeOpBool)(vl_serialize_context *ctx, bool *val);
+    bool (*SerializeOpInt)(vl_serialize_context *ctx, int64_t *val);
     // TODO: SerializeOpInt
     // TODO: SerializeOpFloat
     // TODO: SerializeOpString
@@ -146,6 +147,10 @@ struct VL_ArrayBegin_opts {
 #define VL_ArrayBegin(serialize_ctx, ...) VL_ArrayBegin_Impl((struct VL_ArrayBegin_opts){.ctx = (serialize_ctx), __VA_ARGS__})
 #define VL_ArrayEnd(serialize_ctx) ((serialize_ctx)->ArrayEnd(serialize_ctx))
 
+#define VL_SerializeNull(serialize_ctx) ((serialize_ctx)->SerializeNull(serialize_ctx))
+#define VL_SerializeOpBool(serialize_ctx, val) ((serialize_ctx)->SerializeOpBool(serialize_ctx, val))
+#define VL_SerializeOpInt(serialize_ctx, val) ((serialize_ctx)->SerializeOpInt(serialize_ctx, val))
+
 #define GetSerializeContext(Type, ...) \
     GetSerializeContext_Impl((GetSerializeContext_opts){.type = Type, __VA_ARGS__})
 SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext_opts opt);
@@ -157,7 +162,6 @@ SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeCon
 SERIALIZE_PROC bool VL_ArrayBegin_Impl(struct VL_ArrayBegin_opts opt);
 SERIALIZE_PROC bool VL_AttributeName(vl_serialize_context *ctx, const char *name);
 
-SERIALIZE_PROC void VL_SerializeNull(vl_serialize_context *ctx);
 
 SERIALIZE_PROC void VL_SerializeBool(vl_serialize_context *ctx, bool b);
 SERIALIZE_PROC void VL_SerializeInt(vl_serialize_context *ctx, int64_t val);
@@ -639,12 +643,37 @@ static bool TOML_ArrayEnd(vl_serialize_context *ctx)
 
 //////////////////////////////////////////////
 
+static bool VL__SerializeNull(vl_serialize_context *ctx)
+{
+    ctx->ElementBegin(ctx);
+    SbAppendf(&ctx->output, "null");
+    ctx->ElementEnd(ctx);
+    return true;
+}
+
+static bool VL__SerializeOpBool(vl_serialize_context *ctx, bool *val)
+{
+    VL_SerializeBool(ctx, *val);
+    return true;
+}
+static bool VL__SerializeOpInt(vl_serialize_context *ctx, int64_t *val)
+{
+    VL_SerializeBool(ctx, *val);
+    return true;
+}
+
+//////////////////////////////////////////////
+
 SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext_opts opt)
 {
     vl_serialize_context result = {0};
     result.as.serialize.indent = opt.indent;
     result.type = opt.type;
     result.as.serialize.float_fmt = opt.float_fmt ? opt.float_fmt : "%lf";
+
+    result.SerializeNull = VL__SerializeNull;
+    result.SerializeOpBool = VL__SerializeOpBool;
+    result.SerializeOpInt = VL__SerializeOpInt;
     switch(opt.type) {
         case SerializeType_JSON: {
             result.ObjectBegin = JSON_ObjectBegin;
@@ -791,8 +820,12 @@ static bool JSON_ExpectObjectEnd(vl_serialize_context *ctx)
     if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
 
     bool found_expected = (remaining.items[0] == '}');
+    remaining = ViewTrimLeft(ViewFromParts(remaining.items + 1, remaining.count - 1));
+    if((remaining.count > 0) && (remaining.items[0] == ',')) {
+        ViewChopLeft(&remaining, 1);
+    }
     ctx->as.deserialize.fatal_error = !found_expected;
-    ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
+    ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - remaining.count;
     return found_expected;
 }
 
@@ -814,9 +847,69 @@ static bool JSON_ExpectArrayEnd(vl_serialize_context *ctx)
     if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
 
     bool found_expected = (remaining.items[0] == ']');
+    remaining = ViewTrimLeft(ViewFromParts(remaining.items + 1, remaining.count - 1));
+    if((remaining.count > 0) && (remaining.items[0] == ',')) {
+        ViewChopLeft(&remaining, 1);
+    }
     ctx->as.deserialize.fatal_error = !found_expected;    
-    ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - (remaining.count - 1);
+    ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - remaining.count;
     return found_expected;
+}
+
+//////////////////////////////////////////////
+
+static bool VL_SerializeExpectNull(vl_serialize_context *ctx)
+{
+    view remaining;
+    if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
+
+    bool found_expected = ViewChopStartsWith(&remaining, VIEW("null"));
+    remaining = ViewTrimLeft(remaining);
+    if((remaining.count > 0) && (remaining.items[0] == ',')) {
+        ViewChopLeft(&remaining, 1);
+    }
+    if(found_expected) {
+        ctx->as.deserialize.used_buffer_size = 
+            ctx->as.deserialize.current_chunk_size - remaining.count;
+    }
+    return found_expected;
+}
+
+static bool VL_SerializeExpectBool(vl_serialize_context *ctx, bool *val)
+{
+    view remaining;
+    if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
+
+    if(ViewChopStartsWith(&remaining, VIEW("true"))) {
+        *val = true;
+    } else if(ViewChopStartsWith(&remaining, VIEW("false"))) {
+        *val = false;
+    } else {
+        return false;
+    }
+    remaining = ViewTrimLeft(remaining);
+    if((remaining.count > 0) && (remaining.items[0] == ',')) {
+        ViewChopLeft(&remaining, 1);
+    }
+    ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - remaining.count;
+    return true;
+}
+
+static bool VL_SerializeExpectInt(vl_serialize_context *ctx, int64_t *val)
+{
+    view remaining;
+    if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
+
+    if(ViewParseS64(remaining, val, &remaining)) {
+        remaining = ViewTrimLeft(remaining);
+        if((remaining.count > 0) && (remaining.items[0] == ',')) {
+            ViewChopLeft(&remaining, 1);
+        }
+        ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - remaining.count;
+        return true;
+    } else {
+        return false;
+    }
 }
 
 //////////////////////////////////////////////
@@ -839,6 +932,9 @@ SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeCon
     result.as.deserialize.file_chunk.Buffer = (uint8_t*)opt.buffer;
     result.as.deserialize.file_chunk.BufferSize = opt.buffer_size;
 
+    result.SerializeNull = VL_SerializeExpectNull;
+    result.SerializeOpBool = VL_SerializeExpectBool;
+    result.SerializeOpInt = VL_SerializeExpectInt;
     if(opt.filename) {
         result.as.deserialize.filename = opt.filename;
         uint32_t curr_read_size;
@@ -883,13 +979,6 @@ SERIALIZE_PROC bool VL_ArrayBegin_Impl(struct VL_ArrayBegin_opts opt)
 {
     return opt.ctx->ArrayBeginView(opt.ctx,
             opt.elem_name ? ViewFromCstr(opt.elem_name) : VIEW(""));
-}
-
-SERIALIZE_PROC void VL_SerializeNull(vl_serialize_context *ctx)
-{
-    ctx->ElementBegin(ctx);
-    SbAppendf(&ctx->output, "null");
-    ctx->ElementEnd(ctx);
 }
 
 SERIALIZE_PROC void VL_SerializeBool(vl_serialize_context *ctx, bool b)

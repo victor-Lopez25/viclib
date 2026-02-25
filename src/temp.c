@@ -14,6 +14,12 @@ int main(int argc, char **argv)
         "  \"boolean-values\": [\n"
         "    true,\n"
         "    false\n"
+        "  ],\n"
+        "  \"integers\": [\n"
+        "    0,\n"
+        "    1,\n"
+        "    2,\n"
+        "    3\n"
         "  ]\n"
         "}";
 
@@ -21,9 +27,25 @@ int main(int argc, char **argv)
 
     Assert(VL_ObjectBegin(&ctx));
         if(VL_AttributeName(&ctx, "somenullobj")) {
-            /* VL_SerializeNull */
+            Assert(VL_SerializeNull(&ctx));
         }
-        /*  */
+
+        if(VL_AttributeName(&ctx, "boolean-values")) {
+            Assert(VL_ArrayBegin(&ctx));
+                bool boolean;
+                Assert(VL_SerializeOpBool(&ctx, &boolean) && boolean);
+                Assert(VL_SerializeOpBool(&ctx, &boolean) && !boolean);
+            Assert(VL_ArrayEnd(&ctx));
+        }
+
+        if(VL_AttributeName(&ctx, "integers")) {
+            Assert(VL_ArrayBegin(&ctx));
+                int64_t val;
+                for(int i = 0; i < 4; i++) {
+                    Assert(VL_SerializeOpInt(&ctx, &val) && (val == i));
+                }
+            Assert(VL_ArrayEnd(&ctx));
+        }
     Assert(VL_ObjectEnd(&ctx));
 
 #if 0
