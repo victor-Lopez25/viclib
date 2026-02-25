@@ -126,7 +126,6 @@ struct vl_serialize_context {
     bool (*SerializeNull)(vl_serialize_context *ctx);
     bool (*SerializeOpBool)(vl_serialize_context *ctx, bool *val);
     bool (*SerializeOpInt)(vl_serialize_context *ctx, int64_t *val);
-    // TODO: SerializeOpInt
     // TODO: SerializeOpFloat
     // TODO: SerializeOpString
     // TODO: SerializeOpView
