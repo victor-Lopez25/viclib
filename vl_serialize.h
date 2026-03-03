@@ -161,6 +161,8 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
     GetDeserializeContext_Impl((GetDeserializeContext_opts){.type = Type, __VA_ARGS__})
 SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeContext_opts opt);
 
+/* clear the memory used to reuse it for some other serialization/deserialization */
+SERIALIZE_PROC void VL_SerializeClear(vl_serialize_context *ctx);
 /* free the context, serialization or deserialization */
 SERIALIZE_PROC void VL_SerializeFree(vl_serialize_context *ctx);
 
@@ -1038,6 +1040,25 @@ SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeCon
 }
 
 //////////////////////////////////////////////
+
+SERIALIZE_PROC void VL_SerializeClear(vl_serialize_context *ctx)
+{
+    if(ctx->is_serializing) {
+        /* serialization context */
+        ctx->scopes.count = 0;
+        ctx->output.count = 0;
+        ctx->as.serialize.current_elem = VIEW("");
+        if(ctx->type == SerializeType_TOML) {
+            ctx->as.serialize.as.TOML.done_first_object = false;
+            ctx->as.serialize.as.TOML.count_non_newline_scopes = 0;
+        }
+    } else {
+        /* deserialization context */
+        ctx->as.deserialize.current_chunk_size = 0;
+        ctx->as.deserialize.used_buffer_size = 0;
+        ctx->as.deserialize.fatal_error = false;
+    }
+}
 
 SERIALIZE_PROC void VL_SerializeFree(vl_serialize_context *ctx)
 {
