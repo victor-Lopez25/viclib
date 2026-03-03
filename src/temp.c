@@ -20,6 +20,10 @@ int main(int argc, char **argv)
         "    1,\n"
         "    2,\n"
         "    3\n"
+        "  ],\n"
+        "  \"string-values\": [\n"
+        "    \"hyper!\",\n"
+        "    \"In the view\"\n"
         "  ]\n"
         "}";
 
@@ -44,6 +48,17 @@ int main(int argc, char **argv)
                 for(int i = 0; i < 4; i++) {
                     Assert(VL_SerializeOpInt(&ctx, &val) && (val == i));
                 }
+            Assert(VL_ArrayEnd(&ctx));
+        }
+
+        if(VL_AttributeName(&ctx, "string-values")) {
+            Assert(VL_ArrayBegin(&ctx));
+                char *s;
+                Assert(VL_SerializeOpString(&ctx, &s) && !strcmp(s, "hyper!"));
+                free(s); // remember to free this!
+
+                view v;
+                Assert(VL_SerializeOpView(&ctx, &v) && ViewEq(v, VIEW("In the view")));
             Assert(VL_ArrayEnd(&ctx));
         }
     Assert(VL_ObjectEnd(&ctx));

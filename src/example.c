@@ -117,6 +117,12 @@ void TestParsing()
     TestStr = VIEW("1.32e+4hello");
     Assert(ViewParseF64(TestStr, &F64Val, &TestStr) == PARSE_OK);
     printf("val: %lf, rem: "VIEW_FMT"\n", F64Val, VIEW_ARG(TestStr));
+    printf("val: %lf\n", 1.32e+4);
+
+    TestStr = VIEW("1.32e-3hello");
+    Assert(ViewParseF64(TestStr, &F64Val, &TestStr) == PARSE_OK);
+    printf("val: %lf, rem: "VIEW_FMT"\n", F64Val, VIEW_ARG(TestStr));
+    printf("val: %lf\n", 1.32e-3);
 }
 
 void TestLoc()
@@ -129,6 +135,27 @@ void TestLoc()
     code_location Loc = CURR_LOC;
     printf(LOC_FMT"\n", LOC_ARG(Loc));
     printf(LOC_FMT"\n", LOC_ARG(CURR_LOC));
+}
+
+void TestIntrinsics(void) {
+    printf("CountLeadingZerosU32(0b000110110100) = %u\n", CountLeadingZerosU32(0b000110110100));
+    printf("CountLeadingZerosU64(0b000110110100) = %u\n", CountLeadingZerosU64(0b000110110100));
+    printf("CountTrailingZerosU32(0b000110110100) = %u\n", CountTrailingZerosU32(0b000110110100));
+    printf("CountTrailingZerosU64(0b000110110100) = %u\n", CountTrailingZerosU64(0b000110110100));
+    printf("CountLeadingZerosSafeU32(0b000110110100) = %u\n", CountLeadingZerosSafeU32(0b000110110100));
+    printf("CountLeadingZerosSafeU64(0b000110110100) = %u\n", CountLeadingZerosSafeU64(0b000110110100));
+    printf("CountTrailingZerosSafeU32(0b000110110100) = %u\n", CountTrailingZerosSafeU32(0b000110110100));
+    printf("CountTrailingZerosSafeU64(0b000110110100) = %u\n", CountTrailingZerosSafeU64(0b000110110100));
+
+    printf("CountLeadingZerosU32(0) = %u\n", CountLeadingZerosU32(0)); /* These are undefined */
+    printf("CountLeadingZerosU64(0) = %u\n", CountLeadingZerosU64(0)); /* These are undefined */
+    printf("CountTrailingZerosU32(0) = %u\n", CountTrailingZerosU32(0)); /* These are undefined */
+    printf("CountTrailingZerosU64(0) = %u\n", CountTrailingZerosU64(0)); /* These are undefined */
+
+    printf("CountLeadingZerosSafeU32(0) = %u\n", CountLeadingZerosSafeU32(0));
+    printf("CountLeadingZerosSafeU64(0) = %u\n", CountLeadingZerosSafeU64(0));
+    printf("CountTrailingZerosSafeU32(0) = %u\n", CountTrailingZerosSafeU32(0));
+    printf("CountTrailingZerosSafeU64(0) = %u\n", CountTrailingZerosSafeU64(0));
 }
 
 bool IsSorted(int *arr, int len) {
@@ -163,12 +190,14 @@ void TestAll()
     TestViewStrs();
     TestParsing();
     TestLoc();
+    TestIntrinsics();
     TestSort();
 }
 
 int main()
 {
-    TestAll();
+    //TestAll();
+    TestParsing();
 
     return 0;
 }

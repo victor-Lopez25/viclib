@@ -69,14 +69,13 @@ typedef struct {
     vl_serialize_type type;
     const char *buffer;
     uint32_t buffer_size;
-
     const char *filename;
-    bool buffered_reads;
 } GetDeserializeContext_opts;
 
 typedef struct vl_serialize_context vl_serialize_context;
 struct vl_serialize_context {
     vl_serialize_type type;
+    bool is_serializing; /* is serialize/deserialize context */
     string_builder output;
 
     struct {
@@ -126,10 +125,9 @@ struct vl_serialize_context {
     bool (*SerializeNull)(vl_serialize_context *ctx);
     bool (*SerializeOpBool)(vl_serialize_context *ctx, bool *val);
     bool (*SerializeOpInt)(vl_serialize_context *ctx, int64_t *val);
-    // TODO: SerializeOpInt
     // TODO: SerializeOpFloat
-    // TODO: SerializeOpString
-    // TODO: SerializeOpView
+    bool (*SerializeOpString)(vl_serialize_context *ctx, char **val);
+    bool (*SerializeOpView)(vl_serialize_context *ctx, view *val);
 
     // Internals
     void (*ElementBegin)(vl_serialize_context *ctx);
@@ -150,6 +148,10 @@ struct VL_ArrayBegin_opts {
 #define VL_SerializeNull(serialize_ctx) ((serialize_ctx)->SerializeNull(serialize_ctx))
 #define VL_SerializeOpBool(serialize_ctx, val) ((serialize_ctx)->SerializeOpBool(serialize_ctx, val))
 #define VL_SerializeOpInt(serialize_ctx, val) ((serialize_ctx)->SerializeOpInt(serialize_ctx, val))
+/* returns a strndup to VL_SerializeOpView in val */
+#define VL_SerializeOpString(serialize_ctx, val) ((serialize_ctx)->SerializeOpString(serialize_ctx, val))
+/* returns a slice to data in val */
+#define VL_SerializeOpView(serialize_ctx, val) ((serialize_ctx)->SerializeOpView(serialize_ctx, val))
 
 #define GetSerializeContext(Type, ...) \
     GetSerializeContext_Impl((GetSerializeContext_opts){.type = Type, __VA_ARGS__})
@@ -158,6 +160,9 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
 #define GetDeserializeContext(Type, ...) \
     GetDeserializeContext_Impl((GetDeserializeContext_opts){.type = Type, __VA_ARGS__})
 SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeContext_opts opt);
+
+/* free the context, serialization or deserialization */
+SERIALIZE_PROC void VL_SerializeFree(vl_serialize_context *ctx);
 
 SERIALIZE_PROC bool VL_ArrayBegin_Impl(struct VL_ArrayBegin_opts opt);
 SERIALIZE_PROC bool VL_AttributeName(vl_serialize_context *ctx, const char *name);
@@ -235,7 +240,7 @@ static void VL__SerializeViewNoElement(vl_serialize_context *ctx, view v)
 
 //////////////////////////////////////////////
 
-static void JSON_ElementBegin(vl_serialize_context *ctx)
+static void VL_SerializeJSON_ElementBegin(vl_serialize_context *ctx)
 {
     if(ctx->scopes.count > 0) {
         vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
@@ -251,7 +256,7 @@ static void JSON_ElementBegin(vl_serialize_context *ctx)
     }
 }
 
-static void JSON_ElementEnd(vl_serialize_context *ctx)
+static void VL_SerializeJSON_ElementEnd(vl_serialize_context *ctx)
 {
     if(ctx->scopes.count > 0) {
         vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
@@ -260,7 +265,7 @@ static void JSON_ElementEnd(vl_serialize_context *ctx)
     }
 }
 
-static bool JSON_ObjectBegin(vl_serialize_context *ctx)
+static bool VL_SerializeJSON_ObjectBegin(vl_serialize_context *ctx)
 {
     ctx->ElementBegin(ctx);
     DaAppend(&ctx->output, '{');
@@ -269,7 +274,7 @@ static bool JSON_ObjectBegin(vl_serialize_context *ctx)
     return true;
 }
 
-static bool JSON_AttributeNameView(vl_serialize_context *ctx, view name)
+static bool VL_SerializeJSON_AttributeNameView(vl_serialize_context *ctx, view name)
 {
     ctx->ElementBegin(ctx);
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
@@ -285,7 +290,7 @@ static bool JSON_AttributeNameView(vl_serialize_context *ctx, view name)
     return true;
 }
 
-static bool JSON_ObjectEnd(vl_serialize_context *ctx)
+static bool VL_SerializeJSON_ObjectEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Object, "Error: Last element was not an array and called VL_ObjectEnd");
@@ -299,7 +304,7 @@ static bool JSON_ObjectEnd(vl_serialize_context *ctx)
     return true;
 }
 
-static bool JSON_ArrayBeginView(vl_serialize_context *ctx, view v)
+static bool VL_SerializeJSON_ArrayBeginView(vl_serialize_context *ctx, view v)
 {
     (void)v; // NOTE: JSON doesn't give a name to array elements
     ctx->ElementBegin(ctx);
@@ -309,7 +314,7 @@ static bool JSON_ArrayBeginView(vl_serialize_context *ctx, view v)
     return true;
 }
 
-static bool JSON_ArrayEnd(vl_serialize_context *ctx)
+static bool VL_SerializeJSON_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Last json element was not an array and called VL_ArrayEnd");
@@ -325,7 +330,7 @@ static bool JSON_ArrayEnd(vl_serialize_context *ctx)
 
 //////////////////////////////////////////////
 
-static void C99_Initializer_ElementBegin(vl_serialize_context *ctx)
+static void VL_SerializeC99_Initializer_ElementBegin(vl_serialize_context *ctx)
 {
     if(ctx->scopes.count > 0) {
         vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
@@ -340,7 +345,7 @@ static void C99_Initializer_ElementBegin(vl_serialize_context *ctx)
     }
 }
 
-static bool C99_Initializer_AttributeNameView(vl_serialize_context *ctx, view name)
+static bool VL_SerializeC99_Initializer_AttributeNameView(vl_serialize_context *ctx, view name)
 {
     ctx->ElementBegin(ctx);
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
@@ -355,7 +360,7 @@ static bool C99_Initializer_AttributeNameView(vl_serialize_context *ctx, view na
     return true;
 }
 
-static bool C99_Initializer_ArrayBeginView(vl_serialize_context *ctx, view v)
+static bool VL_SerializeC99_Initializer_ArrayBeginView(vl_serialize_context *ctx, view v)
 {
     (void)v; // NOTE: C99 initializers don't give a name to array elements
     ctx->ElementBegin(ctx);
@@ -365,7 +370,7 @@ static bool C99_Initializer_ArrayBeginView(vl_serialize_context *ctx, view v)
     return true;
 }
 
-static bool C99_Initializer_ArrayEnd(vl_serialize_context *ctx)
+static bool VL_SerializeC99_Initializer_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Last C literal element was not an array and called VL_ArrayEnd");
@@ -381,7 +386,7 @@ static bool C99_Initializer_ArrayEnd(vl_serialize_context *ctx)
 
 //////////////////////////////////////////////
 
-static void XML_ElementBegin(vl_serialize_context *ctx)
+static void VL_SerializeXML_ElementBegin(vl_serialize_context *ctx)
 {
     if(ctx->scopes.count > 0) {
         vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
@@ -402,7 +407,7 @@ static void XML_ElementBegin(vl_serialize_context *ctx)
     }
 }
 
-static void XML_ElementEnd(vl_serialize_context *ctx)
+static void VL_SerializeXML_ElementEnd(vl_serialize_context *ctx)
 {
     AssertMsg(ctx->scopes.count > 0, "Must be in a scope to call ElementEnd");
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
@@ -446,7 +451,7 @@ static void XML_ElementEnd(vl_serialize_context *ctx)
     }
 }
 
-static bool XML_ObjectBegin(vl_serialize_context *ctx)
+static bool VL_SerializeXML_ObjectBegin(vl_serialize_context *ctx)
 {
     ctx->ElementBegin(ctx);
     vl_serialize_scope *scope = VL__SerializeScopePush(ctx, SerializeScope_Object);
@@ -455,7 +460,7 @@ static bool XML_ObjectBegin(vl_serialize_context *ctx)
     return true;
 }
 
-static bool XML_AttributeNameView(vl_serialize_context *ctx, view name)
+static bool VL_SerializeXML_AttributeNameView(vl_serialize_context *ctx, view name)
 {
     ctx->ElementBegin(ctx);
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in a scope before adding an attribute");
@@ -470,7 +475,7 @@ static bool XML_AttributeNameView(vl_serialize_context *ctx, view name)
     return true;
 }
 
-static bool XML_ObjectEnd(vl_serialize_context *ctx)
+static bool VL_SerializeXML_ObjectEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Object, "Error: Last XML element was not an array and called VL_ArrayEnd");
@@ -482,7 +487,7 @@ static bool XML_ObjectEnd(vl_serialize_context *ctx)
     return true;
 }
 
-static bool XML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
+static bool VL_SerializeXML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
 {
     ctx->ElementBegin(ctx);
     vl_serialize_scope *scope = VL__SerializeScopePush(ctx, SerializeScope_Array);
@@ -492,7 +497,7 @@ static bool XML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
     return true;
 }
 
-static bool XML_ArrayEnd(vl_serialize_context *ctx)
+static bool VL_SerializeXML_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Outer scope was not an array and called VL_ArrayEnd");
@@ -506,7 +511,7 @@ static bool XML_ArrayEnd(vl_serialize_context *ctx)
 
 //////////////////////////////////////////////
 
-static void TOML_ElementBegin(vl_serialize_context *ctx)
+static void VL_SerializeTOML_ElementBegin(vl_serialize_context *ctx)
 {
     vl_serialize_scope_type outer_scope_type = 0;
     bool outer_scope_needs_newline = false;
@@ -541,7 +546,7 @@ static void TOML_ElementBegin(vl_serialize_context *ctx)
     }
 }
 
-static void TOML_ElementEnd(vl_serialize_context *ctx)
+static void VL_SerializeTOML_ElementEnd(vl_serialize_context *ctx)
 {
     if(ctx->scopes.count > 0) {
         vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
@@ -553,7 +558,7 @@ static void TOML_ElementEnd(vl_serialize_context *ctx)
     }
 }
 
-static bool TOML_ObjectBegin(vl_serialize_context *ctx)
+static bool VL_SerializeTOML_ObjectBegin(vl_serialize_context *ctx)
 {
     if(ctx->scopes.count <= 1) ctx->as.serialize.as.TOML.ignore_element_begin = true;
     ctx->as.serialize.as.TOML.scope_type_to_push = SerializeScope_Object;
@@ -581,7 +586,7 @@ static bool TOML_ObjectBegin(vl_serialize_context *ctx)
     return true;
 }
 
-static bool TOML_AttributeNameView(vl_serialize_context *ctx, view name)
+static bool VL_SerializeTOML_AttributeNameView(vl_serialize_context *ctx, view name)
 {
     //ctx->ElementBegin(ctx);
     AssertMsg(ctx->scopes.count > 0, "Error: Must be in an object before adding an attribute");
@@ -592,7 +597,7 @@ static bool TOML_AttributeNameView(vl_serialize_context *ctx, view name)
     return true;
 }
 
-static bool TOML_ObjectEnd(vl_serialize_context *ctx)
+static bool VL_SerializeTOML_ObjectEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Object, "Error: Last toml element was not an object and called VL_ObjectEnd");
@@ -610,7 +615,7 @@ static bool TOML_ObjectEnd(vl_serialize_context *ctx)
     return true;
 }
 
-static bool TOML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
+static bool VL_SerializeTOML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
 {
     (void)elem_name; // NOTE: TOML doesn't give a name to array elements
     AssertMsg(ctx->scopes.count > 0, "Error: An outmost scope of an array is not allowed in TOML");
@@ -626,7 +631,7 @@ static bool TOML_ArrayBeginView(vl_serialize_context *ctx, view elem_name)
     return true;
 }
 
-static bool TOML_ArrayEnd(vl_serialize_context *ctx)
+static bool VL_SerializeTOML_ArrayEnd(vl_serialize_context *ctx)
 {
     vl_serialize_scope *scope = &ctx->scopes.items[ctx->scopes.count - 1];
     AssertMsg(scope->type == SerializeScope_Array, "Error: Last toml element was not an array and called VL_ArrayEnd");
@@ -643,7 +648,7 @@ static bool TOML_ArrayEnd(vl_serialize_context *ctx)
 
 //////////////////////////////////////////////
 
-static bool VL__SerializeNull(vl_serialize_context *ctx)
+static bool VL_SerializeOutputNull(vl_serialize_context *ctx)
 {
     ctx->ElementBegin(ctx);
     SbAppendf(&ctx->output, "null");
@@ -651,14 +656,24 @@ static bool VL__SerializeNull(vl_serialize_context *ctx)
     return true;
 }
 
-static bool VL__SerializeOpBool(vl_serialize_context *ctx, bool *val)
+static bool VL_SerializeOutputBool(vl_serialize_context *ctx, bool *val)
 {
     VL_SerializeBool(ctx, *val);
     return true;
 }
-static bool VL__SerializeOpInt(vl_serialize_context *ctx, int64_t *val)
+static bool VL_SerializeOutputInt(vl_serialize_context *ctx, int64_t *val)
 {
     VL_SerializeBool(ctx, *val);
+    return true;
+}
+static bool VL_SerializeOutputString(vl_serialize_context *ctx, char **val)
+{
+    VL_SerializeString(ctx, *val);
+    return true;
+}
+static bool VL_SerializeOutputView(vl_serialize_context *ctx, view *val)
+{
+    VL_SerializeView(ctx, *val);
     return true;
 }
 
@@ -670,60 +685,63 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
     result.as.serialize.indent = opt.indent;
     result.type = opt.type;
     result.as.serialize.float_fmt = opt.float_fmt ? opt.float_fmt : "%lf";
+    result.is_serializing = true;
 
-    result.SerializeNull = VL__SerializeNull;
-    result.SerializeOpBool = VL__SerializeOpBool;
-    result.SerializeOpInt = VL__SerializeOpInt;
+    result.SerializeNull = VL_SerializeOutputNull;
+    result.SerializeOpBool = VL_SerializeOutputBool;
+    result.SerializeOpInt = VL_SerializeOutputInt;
+    result.SerializeOpString = VL_SerializeOutputString;
+    result.SerializeOpView = VL_SerializeOutputView;
     switch(opt.type) {
         case SerializeType_JSON: {
-            result.ObjectBegin = JSON_ObjectBegin;
-            result.AttributeNameView = JSON_AttributeNameView;
-            result.ObjectEnd = JSON_ObjectEnd;
+            result.ObjectBegin = VL_SerializeJSON_ObjectBegin;
+            result.AttributeNameView = VL_SerializeJSON_AttributeNameView;
+            result.ObjectEnd = VL_SerializeJSON_ObjectEnd;
 
-            result.ArrayBeginView = JSON_ArrayBeginView;
-            result.ArrayEnd = JSON_ArrayEnd;
+            result.ArrayBeginView = VL_SerializeJSON_ArrayBeginView;
+            result.ArrayEnd = VL_SerializeJSON_ArrayEnd;
 
-            result.ElementBegin = JSON_ElementBegin;
-            result.ElementEnd = JSON_ElementEnd;
+            result.ElementBegin = VL_SerializeJSON_ElementBegin;
+            result.ElementEnd = VL_SerializeJSON_ElementEnd;
             result.as.serialize.should_quote_strings = true;
         } break;
 
         case SerializeType_C99_Initializer: {
-            result.ObjectBegin = JSON_ObjectBegin;
-            result.AttributeNameView = C99_Initializer_AttributeNameView;
-            result.ObjectEnd = JSON_ObjectEnd;
+            result.ObjectBegin = VL_SerializeJSON_ObjectBegin;
+            result.AttributeNameView = VL_SerializeC99_Initializer_AttributeNameView;
+            result.ObjectEnd = VL_SerializeJSON_ObjectEnd;
 
-            result.ArrayBeginView = C99_Initializer_ArrayBeginView;
-            result.ArrayEnd = C99_Initializer_ArrayEnd;
+            result.ArrayBeginView = VL_SerializeC99_Initializer_ArrayBeginView;
+            result.ArrayEnd = VL_SerializeC99_Initializer_ArrayEnd;
 
-            result.ElementBegin = C99_Initializer_ElementBegin;
-            result.ElementEnd = JSON_ElementEnd;
+            result.ElementBegin = VL_SerializeC99_Initializer_ElementBegin;
+            result.ElementEnd = VL_SerializeJSON_ElementEnd;
             result.as.serialize.should_quote_strings = true;
         } break;
 
         case SerializeType_XML: {
-            result.ObjectBegin = XML_ObjectBegin;
-            result.AttributeNameView = XML_AttributeNameView;
-            result.ObjectEnd = XML_ObjectEnd;
+            result.ObjectBegin = VL_SerializeXML_ObjectBegin;
+            result.AttributeNameView = VL_SerializeXML_AttributeNameView;
+            result.ObjectEnd = VL_SerializeXML_ObjectEnd;
 
-            result.ArrayBeginView = XML_ArrayBeginView;
-            result.ArrayEnd = XML_ArrayEnd;
+            result.ArrayBeginView = VL_SerializeXML_ArrayBeginView;
+            result.ArrayEnd = VL_SerializeXML_ArrayEnd;
 
-            result.ElementBegin = XML_ElementBegin;
-            result.ElementEnd = XML_ElementEnd;
+            result.ElementBegin = VL_SerializeXML_ElementBegin;
+            result.ElementEnd = VL_SerializeXML_ElementEnd;
             result.as.serialize.should_quote_strings = false;
         } break;
 
         case SerializeType_TOML: {
-            result.ObjectBegin = TOML_ObjectBegin;
-            result.AttributeNameView = TOML_AttributeNameView;
-            result.ObjectEnd = TOML_ObjectEnd;
+            result.ObjectBegin = VL_SerializeTOML_ObjectBegin;
+            result.AttributeNameView = VL_SerializeTOML_AttributeNameView;
+            result.ObjectEnd = VL_SerializeTOML_ObjectEnd;
 
-            result.ArrayBeginView = TOML_ArrayBeginView;
-            result.ArrayEnd = TOML_ArrayEnd;
+            result.ArrayBeginView = VL_SerializeTOML_ArrayBeginView;
+            result.ArrayEnd = VL_SerializeTOML_ArrayEnd;
 
-            result.ElementBegin = TOML_ElementBegin;
-            result.ElementEnd = TOML_ElementEnd;            
+            result.ElementBegin = VL_SerializeTOML_ElementBegin;
+            result.ElementEnd = VL_SerializeTOML_ElementEnd;            
             result.as.serialize.should_quote_strings = true;
         } break;
 
@@ -912,6 +930,54 @@ static bool VL_SerializeExpectInt(vl_serialize_context *ctx, int64_t *val)
     }
 }
 
+static bool VL_SerializeJSON_ExpectView(vl_serialize_context *ctx, view *val)
+{
+    view remaining;
+    if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
+
+    bool found_expected = (remaining.items[0] == '"');
+    ViewChopLeft(&remaining, 1);
+    if(!found_expected) return false;
+
+    int64_t i = 0;
+    for(; i < (int64_t)remaining.count; i++) {
+        if((remaining.items[i] == '"') && (remaining.items[i-1] != '\\')) {
+            found_expected = true;
+            break;
+        }
+    }
+    if(!found_expected) return false;
+
+    view result = ViewFromParts(remaining.items, i);
+    remaining = ViewFromParts(remaining.items + i, remaining.count - i);
+    found_expected = found_expected && (remaining.count > 1) && (remaining.items[0] == '"');
+
+    if(found_expected) {
+        ViewChopLeft(&remaining, 1);
+        remaining = ViewTrimLeft(remaining);
+        if((remaining.count > 0) && (remaining.items[0] == ',')) {
+            ViewChopLeft(&remaining, 1);
+        }
+
+        *val = result;
+        ctx->as.deserialize.used_buffer_size = 
+            ctx->as.deserialize.current_chunk_size - remaining.count;
+    }
+    return found_expected;
+}
+
+static bool VL_SerializeExpectString(vl_serialize_context *ctx, char **val)
+{
+    view result;
+    bool ok = ctx->SerializeOpView(ctx, &result);
+    if(ok) {
+        *val = malloc(result.count + 1);
+        mem_copy_non_overlapping(*val, result.items, result.count);
+        *val[result.count] = '\0';
+    }
+    return ok;
+}
+
 //////////////////////////////////////////////
 
 SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeContext_opts opt)
@@ -943,6 +1009,7 @@ SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeCon
     } else {
         result.as.deserialize.current_chunk_size = opt.buffer_size;
     }
+    result.SerializeOpString = VL_SerializeExpectString;
 
     switch(opt.type) {
         case SerializeType_JSON: {
@@ -952,6 +1019,8 @@ SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeCon
 
             result.ArrayBeginView = JSON_ExpectArrayBegin;
             result.ArrayEnd = JSON_ExpectArrayEnd;
+
+            result.SerializeOpView = VL_SerializeJSON_ExpectView;
         } break;
 
         case SerializeType_XML:
