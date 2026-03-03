@@ -339,6 +339,42 @@ thread_local error_number_value VL_ErrorNumber = 0;
 // intrinsics
 ////////////////////////////////
 
+/* Returns the number of leading 0-bits in val, starting at the most significant bit position
+ * If val is 0, the result is undefined
+ */
+VLIBPROC uint32_t CountLeadingZerosU32(uint32_t val);
+/* Returns the number of leading 0-bits in val, starting at the most significant bit position
+ * If val is 0, the result is undefined
+ */
+VLIBPROC uint32_t CountLeadingZerosU64(uint64_t val);
+
+/* Returns the number of leading 0-bits in val, starting at the least significant bit position
+ * If val is 0, the result is undefined
+ */
+VLIBPROC uint32_t CountTrailingZerosU32(uint32_t val);
+/* Returns the number of leading 0-bits in val, starting at the least significant bit position
+ * If val is 0, the result is undefined
+ */
+VLIBPROC uint32_t CountTrailingZerosU64(uint64_t val);
+
+/* Returns the number of leading 0-bits in val, starting at the most significant bit position
+ * If val is 0, returns 32
+ */
+VLIBPROC uint32_t CountLeadingZerosSafeU32(uint32_t val);
+/* Returns the number of leading 0-bits in val, starting at the most significant bit position
+ * If val is 0, returns 64
+ */
+VLIBPROC uint32_t CountLeadingZerosSafeU64(uint64_t val);
+
+/* Returns the number of leading 0-bits in val, starting at the least significant bit position
+ * If val is 0, returns 32
+ */
+VLIBPROC uint32_t CountTrailingZerosSafeU32(uint32_t val);
+/* Returns the number of leading 0-bits in val, starting at the least significant bit position
+ * If val is 0, returns 64
+ */
+VLIBPROC uint32_t CountTrailingZerosSafeU64(uint64_t val);
+
 #if defined(VL_INC_STRING_H)
 # define mem_copy_non_overlapping(dst, src, len) memcpy(dst, src, len)
 # define mem_copy(dst, src, len) memmove(dst, src, len)
@@ -1145,6 +1181,146 @@ int ViewParseF64(view v, f64 *result, view *remaining)
 }
 
 ////////////////////////////////
+
+VLIBPROC uint32_t CountLeadingZerosU32(uint32_t val)
+{
+#if COMPILER_GCC || COMPILER_CLANG || COMPILER_TCC
+    return __builtin_clz(val);
+#elif COMPILER_CL
+    DWORD idx = 0;
+    _BitScanReverse(&idx, val);
+    return 31 - idx;
+#else
+    for(uint32_t i = 0; i < 32; i++) {
+        if((val & (1 << (31 - i))) != 0) return i;
+    }
+    return 32;
+#endif
+}
+
+VLIBPROC uint32_t CountLeadingZerosU64(uint64_t val)
+{
+#if COMPILER_GCC || COMPILER_CLANG || COMPILER_TCC
+    return __builtin_clz(val);
+#elif COMPILER_CL
+    DWORD idx = 0;
+    _BitScanReverse64(&idx, val);
+    return 63 - idx;
+#else
+    for(uint32_t i = 0; i < 64; i++) {
+        if((val & (1 << (63 - i))) != 0) return i;
+    }
+    return 64;
+#endif
+}
+
+VLIBPROC uint32_t CountTrailingZerosU32(uint32_t val)
+{
+#if COMPILER_GCC || COMPILER_CLANG || COMPILER_TCC
+    return __builtin_ctz(val);
+#elif COMPILER_CL
+    DWORD idx = 0;
+    _BitScanForward(&idx, val);
+    return idx;
+#else
+    for(uint32_t i = 0; i < 32; i++) {
+        if((val & (1 << i)) != 0) return i;
+    }
+    return 32;
+#endif
+}
+
+VLIBPROC uint32_t CountTrailingZerosU64(uint64_t val)
+{
+#if COMPILER_GCC || COMPILER_CLANG || COMPILER_TCC
+    return __builtin_ctz(val);
+#elif COMPILER_CL
+    DWORD idx = 0;
+    _BitScanForward64(&idx, val);
+    return idx;
+#else
+    for(uint32_t i = 0; i < 64; i++) {
+        if((val & (1 << i)) != 0) return i;
+    }
+    return 64;
+#endif
+}
+
+VLIBPROC uint32_t CountLeadingZerosSafeU32(uint32_t val)
+{
+#if COMPILER_GCC || COMPILER_CLANG || COMPILER_TCC
+    return val ? __builtin_clz(val) : 32;
+#elif COMPILER_CL
+    DWORD idx = 0;
+    if(_BitScanReverse(&idx, val)) {
+        return 31 - idx;
+    } else {
+        return 32;
+    }
+#else
+    for(uint32_t i = 0; i < 32; i++) {
+        if((val & (1 << (31 - i))) != 0) return i;
+    }
+    return 32;
+#endif
+}
+
+VLIBPROC uint32_t CountLeadingZerosSafeU64(uint64_t val)
+{
+#if COMPILER_GCC || COMPILER_CLANG || COMPILER_TCC
+    return val ? __builtin_clz(val) : 64;
+#elif COMPILER_CL
+    DWORD idx = 0;
+    if(_BitScanReverse64(&idx, val)) {
+        return 63 - idx;
+    } else {
+        return 64;
+    }
+#else
+    for(uint32_t i = 0; i < 64; i++) {
+        if((val & (1 << (63 - i))) != 0) return i;
+    }
+    return 64;
+#endif
+}
+
+VLIBPROC uint32_t CountTrailingZerosSafeU32(uint32_t val)
+{
+#if COMPILER_GCC || COMPILER_CLANG || COMPILER_TCC
+    return val ? __builtin_ctz(val) : 32;
+#elif COMPILER_CL
+    DWORD idx = 0;
+    if(_BitScanForward(&idx, val)) {
+        return idx;
+    } else {
+        return 32;
+    }
+#else
+    for(uint32_t i = 0; i < 32; i++) {
+        if((val & (1 << i)) != 0) return i;
+    }
+    return 32;
+#endif
+}
+
+VLIBPROC uint32_t CountTrailingZerosSafeU64(uint64_t val)
+{
+#if COMPILER_GCC || COMPILER_CLANG || COMPILER_TCC
+    return val ? __builtin_ctz(val) : 64;
+#elif COMPILER_CL
+    DWORD idx = 0;
+    if(_BitScanForward64(&idx, val)) {
+        return idx;
+    } else {
+        return 64;
+    }
+#else
+    for(uint32_t i = 0; i < 64; i++) {
+        if((val & (1 << i)) != 0) return i;
+    }
+    return 64;
+#endif
+}
 
 #if !defined(VL_INC_STRING_H) && !defined(SDL_h_)
 #define VICLIB_MEMCPY_ALIGN (sizeof(size_t)-1)
