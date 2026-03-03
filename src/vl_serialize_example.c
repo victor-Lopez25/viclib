@@ -77,18 +77,22 @@ int main(int argc, char **argv)
     vl_serialize_context ctx = GetSerializeContext(SerializeType_JSON, .indent = 2, .float_fmt = "%+lg");
     Serialize(&ctx);
     printf(VIEW_FMT"\n", VIEW_ARG(ctx.output));
+    VL_SerializeFree(&ctx);
     
     ctx = GetSerializeContext(SerializeType_XML, .indent = 2);
     Serialize(&ctx);
     printf(VIEW_FMT"\n", VIEW_ARG(ctx.output));
+    VL_SerializeFree(&ctx);
     
     ctx = GetSerializeContext(SerializeType_TOML, .indent = 2);
     Serialize(&ctx);
     printf(VIEW_FMT"\n", VIEW_ARG(ctx.output));
+    VL_SerializeFree(&ctx);
     
     ctx = GetSerializeContext(SerializeType_C99_Initializer, .indent = 2);
     Serialize(&ctx);
     printf(VIEW_FMT"\n", VIEW_ARG(ctx.output));
+    VL_SerializeFree(&ctx);
 
     return 0;
 }

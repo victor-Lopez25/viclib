@@ -1039,6 +1039,35 @@ SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeCon
 
 //////////////////////////////////////////////
 
+SERIALIZE_PROC void VL_SerializeFree(vl_serialize_context *ctx)
+{
+    if(ctx->is_serializing) {
+        /* serialization context */
+        if(ctx->scopes.items != 0) {
+            free(ctx->scopes.items);
+            ctx->scopes.items = 0;
+            ctx->scopes.capacity = 0;
+            ctx->scopes.count = 0;
+        }
+
+        if(ctx->output.items != 0) {
+            free(ctx->output.items);
+            ctx->output.items = 0;
+            ctx->output.capacity = 0;
+            ctx->output.count = 0;
+        }
+    } else {
+        /* deserialization context */
+        if(ctx->as.deserialize.must_free_chunk_buffer) {
+            free(ctx->as.deserialize.file_chunk.Buffer);
+            ctx->as.deserialize.file_chunk.Buffer = 0;
+            ctx->as.deserialize.file_chunk.BufferSize = 0;
+        }
+    }
+}
+
+//////////////////////////////////////////////
+
 SERIALIZE_PROC bool VL_AttributeName(vl_serialize_context *ctx, const char *name)
 {
     return ctx->AttributeNameView(ctx, ViewFromCstr(name));
