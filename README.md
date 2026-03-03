@@ -3,10 +3,12 @@
 Header-only library which does some basic stuff you might want in a lot of programs
 
 ### viclib.h includes:
- - String view implementation (view_* functions)
  - Assertions
- - Simple memory functions (mem_copy, mem_zero, mem_compare)
  - Arena implementation
+ - Some intrinsics
+ - Unsigned/signed 128bit operations (by Mārtiņš Možeiko: https://github.com/mmozeiko/overflow/blob/main/x128/x128.h)
+ - String view implementation (view_* functions)
+ - Simple memory functions (mem_copy, mem_zero, mem_compare)
  - Some file operations (filetime, read/write entirefile, getfiletype)
  - Sort() which performs an introsort
 
@@ -137,11 +139,14 @@ To have any of these take effect, you must define them _before_ including this f
    - VICLIB_NO_SORT: remove Sort and all functions used by it
 Check ErrorNumber when errors occur.
 
-### Many thanks to the inspirations for this library:
+### Many thanks to the inspirations for this library
  - Mr4th's 4ed_base_types.h - https://mr-4th.itch.io/4coder (find the file in 'custom' directory)
  - stb header-only libraries - https://github.com/nothings/stb
  - tsoding's string view implementation - https://github.com/tsoding/sv
  - tsoding's nobuild - https://github.com/tsoding/nob.h
+
+### Acknowledgements
+ - x128 ops implementation by Mārtiņš Možeiko: https://github.com/mmozeiko/overflow/blob/main/x128/x128.h
 
 ### Licences
 viclib.h is licenced under MIT, as shown in the file itself. You are free to change the name of the file if you modify it, just keep the license as "original viclib license by Victor Lopez:\n>mit license here<".
