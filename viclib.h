@@ -1275,6 +1275,824 @@ int ViewParseF64(view v, f64 *result, view *remaining)
 
 ////////////////////////////////
 
+#if !defined(VL_INC_STRING_H) && !defined(SDL_h_)
+#define VICLIB_MEMCPY_ALIGN (sizeof(size_t)-1)
+VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len)
+{
+    u8 *d = (u8*)dst;
+    const u8 *s = (const u8*)src;
+    if(((uintptr_t)d & VICLIB_MEMCPY_ALIGN) != ((uintptr_t)s & VICLIB_MEMCPY_ALIGN))
+        goto misaligned;
+
+    for(; ((uintptr_t)d & VICLIB_MEMCPY_ALIGN) && len != 0; len--) *d++ = *s++;
+    if(len != 0) {
+        size_t *wideDst = (size_t*)d;
+        const size_t *wideSrc = (const size_t*)s;
+
+        for(; len >= sizeof(size_t); len -= sizeof(size_t)) *wideDst++ = *wideSrc++;
+        d = (u8*)wideDst;
+        s = (const u8*)wideSrc;
+misaligned:
+        for(; len != 0; len--) *d++ = *s++;
+    }
+}
+#undef VICLIB_MEMCPY_ALIGN
+
+VLIBPROC void mem_copy(void *dst, const void *src, size_t len)
+{
+    u8 *d = (u8*)dst;
+    const u8 *s = (const u8*)src;
+
+    if((uintptr_t)dst == (uintptr_t)src) return;
+    if((uintptr_t)s-(uintptr_t)d-len <= -2*len) {
+        mem_copy_non_overlapping(d, s, len);
+        return;
+    }
+
+    if(d < s) {
+#if COMPILER_GCC
+		if((uintptr_t)s % sizeof(size_t) == (uintptr_t)d % sizeof(size_t)) {
+			while((uintptr_t)d % sizeof(size_t)) {
+				if(!len--) return;
+				*d++ = *s++;
+			}
+            __attribute__((__may_alias__)) size_t *wideDst = (size_t*)d;
+            __attribute__((__may_alias__)) size_t *wideSrc = (size_t*)s;
+			for(; len >= sizeof(size_t); len -= sizeof(size_t)) *d++ = *s++;
+            d = (u8*)wideDst;
+            s = (const u8*)wideSrc;
+        }
+#endif
+		for(; len; len--) *d++ = *s++;
+    } else {
+#if COMPILER_GCC
+		if((uintptr_t)s % sizeof(size_t) == (uintptr_t)d % sizeof(size_t)) {
+			while((uintptr_t)(d + len) % sizeof(size_t)) {
+				if(!len--) return;
+				d[len] = s[len];
+			}
+			while(len >= sizeof(size_t)) {
+                len -= sizeof(size_t);
+                *(__attribute__((__may_alias__)) size_t*)(d + len) = 
+                    *(__attribute__((__may_alias__)) size_t*)(s + len);
+            }
+        }
+#endif
+		while(len) len--, d[len] = s[len];
+    }
+}
+
+VLIBPROC void mem_zero(void *data, size_t len)
+{
+    size_t i;
+
+    if ((uintptr_t)data % sizeof(size_t) == 0 &&
+        len % sizeof(size_t) == 0) {
+        size_t *d = (size_t*)data;
+
+        for(i = 0; i < len/sizeof(size_t); i++) {
+            d[i] = 0;
+        }
+    }
+    else {
+        char *d = (char*)data;
+
+        for(i = 0; i < len; i++) {
+            d[i] = 0;
+        }
+    }
+}
+
+VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
+{
+    const unsigned char *s1 = (const unsigned char*)str1;
+    const unsigned char *s2 = (const unsigned char*)str2;
+
+    for(;count-- > 0;) {
+        if(*s1++ != *s2++)
+            return s1[-1] < s2[-1] ? -1 : 1;
+    }
+    return 0;
+}
+#endif // !defined(VL_INC_STRING_H) && !defined(SDL_h_)
+
+////////////////////////////////
+
+#if !defined(VICLIB_NO_TEMP_ARENA)
+# ifndef VICLIB_TEMP_SIZE
+#  define VICLIB_TEMP_SIZE (4*1024*1024)
+# endif // !defined(VICLIB_TEMP_SIZE)
+static u8 ViclibTempMem[VICLIB_TEMP_SIZE] = {0};
+memory_arena ArenaTemp = {
+    .size = VICLIB_TEMP_SIZE,
+    .base = ViclibTempMem,
+    .used = 0,
+    .scratchCount = 0,
+};
+#endif // !defined(VICLIB_NO_TEMP_ARENA)
+
+ARENAPROC char *Arena_strndup(memory_arena *Arena, const char *s, size_t n)
+{
+    char *Result = ArenaPushSize(Arena, n + 1);
+    mem_copy_non_overlapping(Result, s, n);
+    Result[n] = '\0';
+    return Result;
+}
+
+ARENAPROC char *Arena_strdup(memory_arena *Arena, const char *s)
+{
+    size_t n = strlen(s);
+    return Arena_strndup(Arena, s, n);
+}
+
+ARENAPROC void ArenaInit(memory_arena *Arena, size_t Size, void *Base)
+{
+    Arena->used = 0;
+    Arena->size = Size;
+    Arena->base = (u8*)Base;
+    Arena->scratchCount = 0;
+}
+
+ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment)
+{
+    size_t alignOffset = 0;
+    size_t currentMemLoc = (size_t)Arena->base + Arena->used;
+    size_t alignMask = Alignment - 1;
+    if(currentMemLoc & alignMask) {
+        alignOffset = Alignment - (currentMemLoc & alignMask);
+    }
+    return alignOffset;
+}
+
+ARENAPROC size_t ArenaGetRemaining_Opt(struct ArenaGetRemaining_opts opt)
+{
+    if(opt.Alignment < 1) opt.Alignment = 4;
+    size_t Result = opt.Arena->size - (opt.Arena->used + ArenaGetAlignmentOffset(opt.Arena, opt.Alignment));
+    return Result;
+}
+
+ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt)
+{
+    if(opt.Alignment < 1) opt.Alignment = 4;
+    size_t Size = opt.RequestSize;
+    size_t alignOffset = ArenaGetAlignmentOffset(opt.Arena, opt.Alignment);
+    Size += alignOffset;
+
+    AssertMsg((opt.Arena->used + Size) <= opt.Arena->size, "Assert Fail: Full arena size reached");
+    void *Mem = opt.Arena->base + opt.Arena->used + alignOffset;
+    opt.Arena->used += Size;
+
+    return Mem;
+}
+
+ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt)
+{
+    AssertMsg(opt.Arena->size > opt.SplitSize, "Need more memory in arena to split to requested size");
+    if(opt.SplitSize == 0) opt.SplitSize = ArenaGetRemaining(opt.Arena, .Alignment = 1) / 2;
+
+    opt.Arena->splitCount++;
+    opt.Arena->size = opt.Arena->size - opt.SplitSize;
+
+    opt.SplitArena->size = opt.SplitSize;
+    opt.SplitArena->base = opt.Arena->base + opt.Arena->size;
+    opt.SplitArena->used = 0;
+    opt.SplitArena->scratchCount = 0;
+    opt.SplitArena->splitCount = 0;
+    ArenaPushSize(opt.SplitArena, 0, .Alignment = 4); // 'leak' up to 4 bytes here to keep the memory aligned
+}
+
+ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena)
+{
+    AssertMsg(Arena->splitCount > 0, "This split arena doesn't belong to the arena");
+    AssertMsg(Arena->base + Arena->size == SplitArena->base, "Split arenas must be rejoined as a stack; first in last out");
+    AssertMsg(SplitArena->scratchCount == 0, "Rejoining a split arena without Ending all its scratch arenas will cause conflicts with the original arena");
+    AssertMsg(SplitArena->splitCount == 0, "Rejoining a split arena without rejoining its split arenas will cause memory leaks");
+    SplitArena->base = 0;
+    SplitArena->used = 0;
+    Arena->size += SplitArena->size;
+    Arena->splitCount--;
+}
+
+ARENAPROC void ArenaSplitMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount)
+{
+    size_t splitSize = ArenaGetRemaining(Arena, .Alignment = 1) / (SplitArenaCount + 1);
+    for(size_t splitIdx = 0; splitIdx < SplitArenaCount; splitIdx++) ArenaSplit(Arena, SplitArenas[splitIdx], splitSize);
+}
+
+ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount)
+{
+    for(int64_t splitIdx = (int64_t)SplitArenaCount - 1; splitIdx >= 0; splitIdx--) ArenaRejoin(Arena, SplitArenas[splitIdx]);
+}
+
+ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena)
+{
+    scratch_arena scratch = {
+        .Arena = Arena,
+        .startMemOffset = Arena->used,
+    };
+    Arena->scratchCount += 1;
+
+    return scratch;
+}
+
+ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem)
+{
+    memory_arena *Arena = Scratch.Arena;
+    Assert(Arena->used >= Scratch.startMemOffset);
+    if(ZeroMem) {
+        mem_zero(Arena->base + Scratch.startMemOffset, Arena->used - Scratch.startMemOffset);
+    }
+    Arena->used = Scratch.startMemOffset;
+    Assert(Arena->scratchCount > 0);
+    Arena->scratchCount -= 1;
+}
+
+////////////////////////////////
+
+struct vl_globalcontext VL_globalContext = {0};
+
+VLIBPROC bool VL_Init(void)
+{
+    if(VL_globalContext.initted) {
+        return false; // Only do init once
+    }
+    VL_globalContext.initted = true;
+#if !defined(VICLIB_NO_PLATFORM)
+#if OS_WINDOWS
+    LARGE_INTEGER time;
+#ifdef __cplusplus
+    VL_globalContext.performanceFrequency = {0};
+#else
+    VL_globalContext.performanceFrequency = (LARGE_INTEGER){0};
+#endif
+
+    QueryPerformanceFrequency(&VL_globalContext.performanceFrequency);
+    QueryPerformanceCounter(&time);
+    u64 secs = time.QuadPart / VL_globalContext.performanceFrequency.QuadPart;
+    u64 nanos = (time.QuadPart % VL_globalContext.performanceFrequency.QuadPart) *
+        VL_NANOS_PER_SEC / VL_globalContext.performanceFrequency.QuadPart;
+    VL_globalContext.initTime = VL_NANOS_PER_SEC * secs + nanos;
+#elif OS_LINUX || OS_MAC
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    VL_globalContext.initTime = VL_NANOS_PER_SEC * ts.tv_sec + ts.tv_nsec;
+#else
+#error Unsupported
+#endif // OS
+#endif // !defined(VICLIB_NO_PLATFORM)
+
+    return true;
+}
+
+#if !defined(VICLIB_NO_PLATFORM)
+
+VLIBPROC bool VL_SetCurrentDir(const char *path)
+{
+#if OS_WINDOWS
+    return (bool)SetCurrentDirectory(path);
+#elif OS_LINUX || OS_MAC
+    return chdir(path) >= 0;
+#else
+#error Unsupported
+#endif
+}
+
+VLIBPROC bool VL_FileExists(const char *path)
+{
+#if _WIN32
+    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+#else
+    return access(path, F_OK) == 0;
+#endif
+}
+
+#if !OS_WINDOWS
+#include <string.h> /* strstr */
+#include <ctype.h>
+bool IsDebuggerPresent(void)
+{
+    // https://stackoverflow.com/questions/3596781/how-to-detect-if-the-current-process-is-being-run-by-gdb
+    char buf[4096];
+    const int status_fd = open("/proc/self/status", O_RDONLY);
+    if (status_fd == -1)
+        return false;
+
+    const ssize_t num_read = read(status_fd, buf, sizeof(buf) - 1);
+    close(status_fd);
+
+    if (num_read <= 0)
+        return false;
+
+    buf[num_read] = '\0';
+    char tracerPidString[] = "TracerPid:";
+    const char *tracer_pid_ptr = strstr(buf, tracerPidString); // TODO: use ViewContains (when it is better)
+    if (!tracer_pid_ptr)
+        return false;
+    
+    for(const char* characterPtr = tracer_pid_ptr + sizeof(tracerPidString) - 1; characterPtr <= buf + num_read; ++characterPtr) {
+        if (isspace(*characterPtr))
+            continue;
+        else
+            return isdigit(*characterPtr) != 0 && *characterPtr != '0';
+    }
+
+    return false;
+}
+#endif
+
+VLIBPROC bool GetLastWriteTime(const char *file, u64 *WriteTime)
+{
+    bool ok = false;
+
+#if OS_WINDOWS
+    WIN32_FILE_ATTRIBUTE_DATA data;
+    if(GetFileAttributesEx(file, GetFileExInfoStandard, &data) &&
+        (uint64_t)data.nFileSizeHigh + (uint64_t)data.nFileSizeLow > 0)
+    {
+        *WriteTime = *(uint64_t*)&data.ftLastWriteTime;
+        ok = true;
+    }
+#elif OS_LINUX || OS_MAC
+    struct stat attr;
+    if(!stat(file, &attr) && attr.st_size > 0) {
+        ok = true;
+        *WriteTime = *(uint64_t*)&attr.st_mtim;
+    }
+#else
+#error Unsupported
+#endif
+
+    return ok;
+}
+
+VLIBPROC file_type VL_GetFileType(const char *path)
+{
+#if OS_WINDOWS
+    DWORD attr = GetFileAttributesA(path);
+    if(attr == INVALID_FILE_ATTRIBUTES) return VL_FILE_INVALID;
+    if(attr & FILE_ATTRIBUTE_DIRECTORY) return VL_FILE_DIRECTORY;
+    if(attr & FILE_ATTRIBUTE_REPARSE_POINT) return VL_FILE_SYMLINK;
+    return VL_FILE_REGULAR;
+#elif OS_LINUX || OS_MAC
+    struct stat statbuf;
+    if(lstat(path, &statbuf) < 0) return VL_FILE_INVALID;
+    if(S_ISREG(statbuf.st_mode)) return VL_FILE_REGULAR;
+    if(S_ISDIR(statbuf.st_mode)) return VL_FILE_DIRECTORY;
+    if(S_ISLNK(statbuf.st_mode)) return VL_FILE_SYMLINK;
+    return VL_FILE_OTHER;
+#else
+#error Unsupported
+#endif
+}
+
+VLIBPROC u64 VL_GetNanos(void)
+{
+#if OS_WINDOWS
+    AssertMsg(VL_globalContext.performanceFrequency.QuadPart != 0, "Error: You must call VL_Init() before calling VL_GetNanos()");
+
+    LARGE_INTEGER time;
+    QueryPerformanceCounter(&time);
+    u64 secs = time.QuadPart / VL_globalContext.performanceFrequency.QuadPart;
+    u64 nanos = (time.QuadPart % VL_globalContext.performanceFrequency.QuadPart) * 
+        VL_NANOS_PER_SEC / VL_globalContext.performanceFrequency.QuadPart;
+    return (VL_NANOS_PER_SEC * secs + nanos) - VL_globalContext.initTime;
+#elif OS_LINUX || OS_MAC
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (VL_NANOS_PER_SEC * ts.tv_sec + ts.tv_nsec) - VL_globalContext.initTime;
+#else
+#error Unsupported
+#endif
+}
+
+#if !defined(VICLIB_NO_FILE_IO)
+
+PUSH_IGNORE_UNINITIALIZED
+VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size)
+{
+    VL_ErrorNumber = ERROR_NO_ERROR;
+#if OS_WINDOWS
+    AssertMsg(Size != 0, "Size parameter must be a valid pointer");
+    char *result = 0;
+    HANDLE FileHandle = CreateFileA(File, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    bool ok = FileHandle != INVALID_HANDLE_VALUE;
+    if(!ok) {
+        DWORD Error = GetLastError();
+        switch(Error) {
+            case ERROR_INVALID_DRIVE: fallthrough;
+            case ERROR_PATH_NOT_FOUND: fallthrough;
+            case ERROR_FILE_NOT_FOUND: VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
+            case ERROR_ACCESS_DENIED: VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
+
+            default: VL_ErrorNumber = ERROR_READ_UNKNOWN; break;
+        }
+    }
+
+    LARGE_INTEGER FileSize;
+    if(ok) {
+        ok = (bool)GetFileSizeEx(FileHandle, &FileSize);
+        if(!ok) VL_ErrorNumber = ERROR_READ_UNKNOWN;
+    }
+
+    u64 Limit = READ_ENTIRE_FILE_MAX;
+
+    if(ok) {
+        ok = (u64)FileSize.QuadPart <= Limit;
+        if(!ok) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+    }
+    u32 FileSizeU32 = (u32)FileSize.QuadPart;
+
+    size_t arenaMark = Arena->used;
+    if(ok) {
+        if(ArenaGetRemaining(Arena) < (size_t)FileSize.QuadPart) {
+            VL_ErrorNumber = ERROR_NO_MEM;
+            ok = false;
+        } else {
+            result = ArenaPushSize(Arena, FileSize.QuadPart);
+        }
+    }
+
+    if(ok) {
+        DWORD BytesRead;
+        if(ReadFile(FileHandle, result, FileSizeU32, &BytesRead, 0) && (FileSize.QuadPart == BytesRead))
+        {
+            *Size = FileSize.QuadPart;
+        } else {
+            VL_ErrorNumber = ERROR_READ_UNKNOWN;
+            mem_zero(Arena->base + arenaMark, Arena->used - arenaMark);
+            Arena->used = arenaMark;
+        }
+    }
+
+    CloseHandle(FileHandle);
+#elif OS_LINUX || OS_MAC
+    char *result = 0;
+    int fd = open(File, O_RDONLY);
+    if(fd == -1) {
+        if(errno == EACCES || errno == EPERM) VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED;
+        else if(errno == ENOMEM) VL_ErrorNumber = ERROR_NO_MEM;
+        else if(errno == EOVERFLOW) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+        else if(errno == EBADF || errno == ENOENT)
+            VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
+        else VL_ErrorNumber = ERROR_READ_UNKNOWN;
+        return 0;
+    }
+
+    struct stat stat;
+    if(fstat(fd, &stat) == -1) {
+        VL_ErrorNumber = ERROR_READ_UNKNOWN;
+        close(fd);
+        return 0;
+    }
+
+    size_t arenaMark = Arena->used;
+    if(ArenaGetRemaining(Arena) < (size_t)stat.st_size) {
+        VL_ErrorNumber = ERROR_NO_MEM;
+        close(fd);
+        return 0;
+    } else {
+        result = ArenaPushSize(Arena, (size_t)stat.st_size);
+    }
+
+    ssize_t bytesRead = read(fd, result, stat.st_size);
+    if(bytesRead != stat.st_size) {
+        VL_ErrorNumber = ERROR_READ_UNKNOWN;
+        close(fd);
+        mem_zero(Arena->base + arenaMark, Arena->used - arenaMark);
+        Arena->used = arenaMark;
+        return 0;
+    }
+
+    close(fd);
+
+    if(Size) *Size = stat.st_size;
+#else
+#error Unsupported
+#endif
+    return result;
+}
+RESTORE_WARNINGS
+
+bool ReadFileChunk(vl_file_chunk *Chunk, const char *File, u32 *ChunkSize)
+{
+    AssertMsg(Chunk->Buffer && Chunk->BufferSize, "Requires a valid buffer and a buffer size");
+    VL_ErrorNumber = 0;
+
+#if OS_WINDOWS
+    if(!Chunk->File) {
+        Chunk->File = CreateFileA(File, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+        if(Chunk->File == INVALID_HANDLE_VALUE) {
+            DWORD Error = GetLastError();
+            switch(Error) {
+                case ERROR_INVALID_DRIVE: fallthrough;
+                case ERROR_PATH_NOT_FOUND: fallthrough;
+                case ERROR_FILE_NOT_FOUND: VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
+                case ERROR_ACCESS_DENIED: VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
+
+                default: VL_ErrorNumber = ERROR_READ_UNKNOWN; break;
+            }
+            return false;
+        }
+
+        LARGE_INTEGER FileSize;
+        if(GetFileSizeEx(Chunk->File, &FileSize) == 0) {
+            // NOTE: Shouldn't fail if CreateFile didn't fail
+            VL_ErrorNumber = ERROR_READ_UNKNOWN;
+            return false;
+        }
+
+        Chunk->RemainingFileSize = FileSize.QuadPart;
+    } else if(Chunk->RemainingFileSize == 0) {
+        CloseHandle(Chunk->File);
+        Chunk->File = 0;
+        return false;
+    }
+    size_t OutSize = min(Chunk->RemainingFileSize, (size_t)Chunk->BufferSize);
+
+    DWORD BytesRead;
+    if(ReadFile(Chunk->File, Chunk->Buffer, (u32)OutSize, &BytesRead, 0) && (OutSize == BytesRead))
+    {
+        *ChunkSize = (u32)OutSize;
+    } else {
+        VL_ErrorNumber = ERROR_READ_UNKNOWN;
+        return false;
+    }
+
+#elif OS_LINUX || OS_LINUX
+    if(!Chunk->didFirstIteration) {
+        Chunk->didFirstIteration = true;
+        Chunk->fd = open(File, O_RDONLY);
+        if(Chunk->fd == -1) {
+            if(errno == EACCES || errno == EPERM) VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED;
+            else if(errno == ENOMEM) VL_ErrorNumber = ERROR_NO_MEM;
+            else if(errno == EOVERFLOW) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+            else if(errno == EBADF || errno == ENOENT)
+                VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
+            else VL_ErrorNumber = ERROR_READ_UNKNOWN;
+            return false;
+        }
+
+        struct stat stat;
+        if(fstat(Chunk->fd, &stat) == -1) {
+            VL_ErrorNumber = ERROR_READ_UNKNOWN;
+            close(Chunk->fd);
+            return false;
+        }
+
+        Chunk->RemainingFileSize = stat.st_size;
+    } else if(Chunk->RemainingFileSize == 0) {
+        if(Chunk->fd > 2) close(Chunk->fd); // I don't think I should try to close stdin, stdout, stderr?
+        Chunk->didFirstIteration = false;
+        Chunk->fd = 0;
+        return false;
+    }
+
+    size_t OutSize = min(Chunk->RemainingFileSize, (size_t)Chunk->BufferSize);
+
+    if(OutSize == (size_t)read(Chunk->fd, Chunk->Buffer, OutSize)) {
+        *ChunkSize = (u32)OutSize;
+    } else {
+        VL_ErrorNumber = ERROR_READ_UNKNOWN;
+        return false;
+    }
+#else
+#error Unsupported
+#endif
+
+    Chunk->RemainingFileSize -= (u32)OutSize;
+    return true;
+}
+
+VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
+{
+    bool result = true;
+
+#if OS_WINDOWS
+    HANDLE fhandle = INVALID_HANDLE_VALUE;
+
+    fhandle = CreateFileA(File, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if(fhandle == INVALID_HANDLE_VALUE) {
+        DWORD Error = GetLastError();
+        switch(Error) {
+            case ERROR_INVALID_DRIVE: fallthrough;
+            case ERROR_PATH_NOT_FOUND: fallthrough;
+            case ERROR_FILE_NOT_FOUND: VL_ErrorNumber = ERROR_WRITE_PATH_NOT_FOUND; break;
+            case ERROR_ACCESS_DENIED: VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
+
+            default: VL_ErrorNumber = ERROR_WRITE_UNKNOWN;
+        }
+        VL_ReturnDefer(false);
+    }
+
+    Assert(Size < 0xFFFFFFFFULL);
+    u8 *fData = (u8*)Data;
+    DWORD bytesToWriteTotal = (DWORD)Size;
+    DWORD bytesWrittenTotal = 0;
+    DWORD bytesWritten = 0;
+    while(bytesToWriteTotal > bytesWrittenTotal) {
+        if(!WriteFile(fhandle, fData, bytesToWriteTotal - bytesWrittenTotal, &bytesWritten, 0)) {
+            VL_ErrorNumber = ERROR_WRITE_UNKNOWN;
+            VL_ReturnDefer(false);
+        }
+        bytesWrittenTotal += bytesWritten;
+        fData += bytesWritten;
+    }
+
+defer:
+    if(fhandle != INVALID_HANDLE_VALUE) CloseHandle(fhandle);
+    return result;
+
+#elif OS_LINUX || OS_MAC
+    int fd = open(File, O_CREAT | O_WRONLY | O_TRUNC);
+    if(fd == -1) {
+        if(errno == EACCES || errno == EPERM) VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED;
+        else if(errno == ENOMEM) VL_ErrorNumber = ERROR_NO_MEM;
+        else if(errno == EOVERFLOW) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
+        // this could happen if creating a file in a directory that doesn't exist I think?
+        else if(errno == EBADF || errno == ENOENT)
+            VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
+        else VL_ErrorNumber = ERROR_READ_UNKNOWN;
+        return false;
+    }
+
+    u8 *fData = (u8*)Data;
+    ssize_t bytesToWriteTotal = (ssize_t)Size;
+    ssize_t bytesWrittenTotal = 0;
+    while(bytesToWriteTotal > bytesWrittenTotal) {
+        ssize_t bytesWritten = write(fd, fData, bytesToWriteTotal - bytesWrittenTotal);
+        if(bytesWritten == -1) {
+            VL_ErrorNumber = ERROR_WRITE_UNKNOWN;
+            VL_ReturnDefer(false);
+        }
+        bytesWrittenTotal += bytesWritten;
+        fData += bytesWritten;
+    }
+
+defer:
+    close(fd);
+    return result;
+#else
+#error Unsupported
+#endif
+}
+
+#endif // !defined(VICLIB_NO_FILE_IO)
+
+VLIBPROC const char *VL_GetError(void) {
+    switch(VL_ErrorNumber) {
+        case ERROR_READ_UNKNOWN: return "Unknown read error";
+        case ERROR_WRITE_UNKNOWN: return "Unknown write error";
+        case ERROR_READ_FILE_NOT_FOUND: return "File not found";
+        case ERROR_WRITE_PATH_NOT_FOUND: return "Path not found"; /* A directory specified to get to the file does not exist */
+        case ERROR_FILE_ACCESS_DENIED: return "Access denied";
+        case ERROR_NO_MEM: return "No remaining memory";
+        case ERROR_READ_FILE_TOO_BIG: return "File too large";
+    
+        case ERROR_NO_ERROR:
+        default: return "Unknown error";
+    }
+}
+
+#endif // !defined(VICLIB_NO_PLATFORM)
+
+#ifndef VICLIB_NO_SORT
+
+bool int_less_than(const void *A, const void *B) {
+    return (*(int*)A < *(int*)B);
+}
+
+void VL_SwapSize(void *A, void *B, size_t Size)
+{
+    size_t i;
+    if((uintptr_t)A % sizeof(size_t) == 0 &&
+       (uintptr_t)B % sizeof(size_t) == 0 &&
+       Size % sizeof(size_t) == 0)
+    {
+        size_t temp;
+        size_t *APtr = (size_t*)A;
+        size_t *BPtr = (size_t*)B;
+
+        for(i = 0; i < Size/sizeof(size_t); i++) {
+            VL_Swap(*APtr, *BPtr);
+            APtr++; BPtr++;
+        }
+    }
+    else {
+        char temp;
+        char *APtr = (char*)A;
+        char *BPtr = (char*)B;
+
+        for(i = 0; i < Size; i++) {
+            VL_Swap(*APtr, *BPtr);
+            APtr++; BPtr++;
+        }
+    }
+}
+
+// introsort
+void Sort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
+{
+    // compute MaxDepth = 2*log_2(Count)
+    int MaxDepth = -2;
+    for(size_t i = Count; i != 0; i >>= 1) MaxDepth += 2;
+    VL_IntroSort(Data, 0, Count - 1, MaxDepth, ElementSize, less_than);
+}
+void VL_IntroSort(void *Data, size_t lo, size_t hi, int Depth, size_t ElementSize, bool (*less_than)(const void *, const void *))
+{
+    if(lo < hi) {
+        if((hi - lo + 1) < 16) {
+            VL_InsertionSort((u8*)Data + lo*ElementSize, hi - lo + 1, ElementSize, less_than);
+        }
+        else if(Depth == 0) {
+            VL_HeapSort((u8*)Data + lo*ElementSize, hi - lo + 1, ElementSize, less_than);
+        }
+        else {
+            size_t PivotIdx = (lo + hi)/2; // median of 3 could be better here, I'm not sure
+
+            VL_SwapSize((u8*)Data + PivotIdx*ElementSize, (u8*)Data + lo*ElementSize, ElementSize);
+            void *Pivot = (u8*)Data + lo*ElementSize;
+
+            size_t i = lo + 1;
+            for(size_t j = lo + 1; j < hi + 1; j++)
+            {
+                if(less_than((u8*)Data + j*ElementSize, Pivot)) {
+                    // swap(Arr[i], Arr[j]);
+                    VL_SwapSize((u8*)Data + i*ElementSize, (u8*)Data + j*ElementSize, ElementSize);
+                    i++;
+                }
+            }
+            // swap(Arr[lo], Arr[i-1]);
+            VL_SwapSize((u8*)Data + lo*ElementSize, (u8*)Data + (i-1)*ElementSize, ElementSize);
+            PivotIdx = i - 1;
+
+            if(PivotIdx > 0) VL_IntroSort(Data, lo, PivotIdx - 1, Depth - 1, ElementSize, less_than);
+            VL_IntroSort(Data, PivotIdx + 1, hi, Depth - 1, ElementSize, less_than);
+        }
+    }
+}
+
+void VL_InsertionSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
+{
+    for(size_t i = 1; i < Count; i++)
+    {
+        void *Val = (u8*)Data + i*ElementSize;
+
+        int64_t j = i - 1;
+        for(;j >= 0 && less_than(Val, (u8*)Data + j*ElementSize); j--)
+        {
+            mem_copy((u8*)Data + (j+1)*ElementSize, (u8*)Data + j*ElementSize, ElementSize);
+        }
+        mem_copy((u8*)Data + (j+1)*ElementSize, Val, ElementSize);
+    }
+}
+void VL_HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
+{
+    // left child = 2*i + 1
+    // right child = 2*i + 2
+    // parent = (i-1)/2 (truncated)
+
+    for(size_t Start = (Count - 2) / 2; Start > 0; Start--) {
+        size_t Root = Start;
+        while(2*Root + 1 < Count) {
+            size_t Child = 2*Root + 1;
+            if(Child + 1 < Count && less_than((u8*)Data + Child*ElementSize, (u8*)Data + (Child+1)*ElementSize)) {
+                Child++;
+            }
+            
+            if(less_than((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize)) {
+                VL_SwapSize((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize, ElementSize);
+                Root = Child;
+            } else {
+                break;
+            }
+        }
+    }
+    
+    for(size_t End = Count - 1; End > 0; End--) {
+        VL_SwapSize(Data, (u8*)Data + End*ElementSize, ElementSize);
+        
+        size_t Root = 0;
+        while(2*Root + 1 < End) {
+            size_t Child = 2*Root + 1;
+            if(Child + 1 < End && less_than((u8*)Data + Child*ElementSize, (u8*)Data + (Child+1)*ElementSize)) {
+                Child++;
+            }
+            
+            if(less_than((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize)) {
+                VL_SwapSize((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize, ElementSize);
+                Root = Child;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+#endif // !defined(VICLIB_NO_SORT)
+#endif // VICLIB_IMPLEMENTATION
+
+// NOTE: 'static inline' functions should be outside VICLIB_IMPLEMENTATION
+
 /* x128 ops implementation by Mārtiņš Možeiko: https://github.com/mmozeiko/overflow/blob/main/x128/x128.h */
 x128 x128_zero(void)
 {
@@ -2395,819 +3213,4 @@ uint32_t CountTrailingZerosSafeU64(uint64_t val)
 #endif
 }
 
-#if !defined(VL_INC_STRING_H) && !defined(SDL_h_)
-#define VICLIB_MEMCPY_ALIGN (sizeof(size_t)-1)
-VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len)
-{
-    u8 *d = (u8*)dst;
-    const u8 *s = (const u8*)src;
-    if(((uintptr_t)d & VICLIB_MEMCPY_ALIGN) != ((uintptr_t)s & VICLIB_MEMCPY_ALIGN))
-        goto misaligned;
-
-    for(; ((uintptr_t)d & VICLIB_MEMCPY_ALIGN) && len != 0; len--) *d++ = *s++;
-    if(len != 0) {
-        size_t *wideDst = (size_t*)d;
-        const size_t *wideSrc = (const size_t*)s;
-
-        for(; len >= sizeof(size_t); len -= sizeof(size_t)) *wideDst++ = *wideSrc++;
-        d = (u8*)wideDst;
-        s = (const u8*)wideSrc;
-misaligned:
-        for(; len != 0; len--) *d++ = *s++;
-    }
-}
-#undef VICLIB_MEMCPY_ALIGN
-
-VLIBPROC void mem_copy(void *dst, const void *src, size_t len)
-{
-    u8 *d = (u8*)dst;
-    const u8 *s = (const u8*)src;
-
-    if((uintptr_t)dst == (uintptr_t)src) return;
-    if((uintptr_t)s-(uintptr_t)d-len <= -2*len) {
-        mem_copy_non_overlapping(d, s, len);
-        return;
-    }
-
-    if(d < s) {
-#if COMPILER_GCC
-		if((uintptr_t)s % sizeof(size_t) == (uintptr_t)d % sizeof(size_t)) {
-			while((uintptr_t)d % sizeof(size_t)) {
-				if(!len--) return;
-				*d++ = *s++;
-			}
-            __attribute__((__may_alias__)) size_t *wideDst = (size_t*)d;
-            __attribute__((__may_alias__)) size_t *wideSrc = (size_t*)s;
-			for(; len >= sizeof(size_t); len -= sizeof(size_t)) *d++ = *s++;
-            d = (u8*)wideDst;
-            s = (const u8*)wideSrc;
-        }
-#endif
-		for(; len; len--) *d++ = *s++;
-    } else {
-#if COMPILER_GCC
-		if((uintptr_t)s % sizeof(size_t) == (uintptr_t)d % sizeof(size_t)) {
-			while((uintptr_t)(d + len) % sizeof(size_t)) {
-				if(!len--) return;
-				d[len] = s[len];
-			}
-			while(len >= sizeof(size_t)) {
-                len -= sizeof(size_t);
-                *(__attribute__((__may_alias__)) size_t*)(d + len) = 
-                    *(__attribute__((__may_alias__)) size_t*)(s + len);
-            }
-        }
-#endif
-		while(len) len--, d[len] = s[len];
-    }
-}
-
-VLIBPROC void mem_zero(void *data, size_t len)
-{
-    size_t i;
-
-    if ((uintptr_t)data % sizeof(size_t) == 0 &&
-        len % sizeof(size_t) == 0) {
-        size_t *d = (size_t*)data;
-
-        for(i = 0; i < len/sizeof(size_t); i++) {
-            d[i] = 0;
-        }
-    }
-    else {
-        char *d = (char*)data;
-
-        for(i = 0; i < len; i++) {
-            d[i] = 0;
-        }
-    }
-}
-
-VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
-{
-    const unsigned char *s1 = (const unsigned char*)str1;
-    const unsigned char *s2 = (const unsigned char*)str2;
-
-    for(;count-- > 0;) {
-        if(*s1++ != *s2++)
-            return s1[-1] < s2[-1] ? -1 : 1;
-    }
-    return 0;
-}
-#endif // !defined(VL_INC_STRING_H) && !defined(SDL_h_)
-
-////////////////////////////////
-
-#if !defined(VICLIB_NO_TEMP_ARENA)
-# ifndef VICLIB_TEMP_SIZE
-#  define VICLIB_TEMP_SIZE (4*1024*1024)
-# endif // !defined(VICLIB_TEMP_SIZE)
-static u8 ViclibTempMem[VICLIB_TEMP_SIZE] = {0};
-memory_arena ArenaTemp = {
-    .size = VICLIB_TEMP_SIZE,
-    .base = ViclibTempMem,
-    .used = 0,
-    .scratchCount = 0,
-};
-#endif // !defined(VICLIB_NO_TEMP_ARENA)
-
-ARENAPROC char *Arena_strndup(memory_arena *Arena, const char *s, size_t n)
-{
-    char *Result = ArenaPushSize(Arena, n + 1);
-    mem_copy_non_overlapping(Result, s, n);
-    Result[n] = '\0';
-    return Result;
-}
-
-ARENAPROC char *Arena_strdup(memory_arena *Arena, const char *s)
-{
-    size_t n = strlen(s);
-    return Arena_strndup(Arena, s, n);
-}
-
-ARENAPROC void ArenaInit(memory_arena *Arena, size_t Size, void *Base)
-{
-    Arena->used = 0;
-    Arena->size = Size;
-    Arena->base = (u8*)Base;
-    Arena->scratchCount = 0;
-}
-
-ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment)
-{
-    size_t alignOffset = 0;
-    size_t currentMemLoc = (size_t)Arena->base + Arena->used;
-    size_t alignMask = Alignment - 1;
-    if(currentMemLoc & alignMask) {
-        alignOffset = Alignment - (currentMemLoc & alignMask);
-    }
-    return alignOffset;
-}
-
-ARENAPROC size_t ArenaGetRemaining_Opt(struct ArenaGetRemaining_opts opt)
-{
-    if(opt.Alignment < 1) opt.Alignment = 4;
-    size_t Result = opt.Arena->size - (opt.Arena->used + ArenaGetAlignmentOffset(opt.Arena, opt.Alignment));
-    return Result;
-}
-
-ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt)
-{
-    if(opt.Alignment < 1) opt.Alignment = 4;
-    size_t Size = opt.RequestSize;
-    size_t alignOffset = ArenaGetAlignmentOffset(opt.Arena, opt.Alignment);
-    Size += alignOffset;
-
-    AssertMsg((opt.Arena->used + Size) <= opt.Arena->size, "Assert Fail: Full arena size reached");
-    void *Mem = opt.Arena->base + opt.Arena->used + alignOffset;
-    opt.Arena->used += Size;
-
-    return Mem;
-}
-
-ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt)
-{
-    AssertMsg(opt.Arena->size > opt.SplitSize, "Need more memory in arena to split to requested size");
-    if(opt.SplitSize == 0) opt.SplitSize = ArenaGetRemaining(opt.Arena, .Alignment = 1) / 2;
-
-    opt.Arena->splitCount++;
-    opt.Arena->size = opt.Arena->size - opt.SplitSize;
-
-    opt.SplitArena->size = opt.SplitSize;
-    opt.SplitArena->base = opt.Arena->base + opt.Arena->size;
-    opt.SplitArena->used = 0;
-    opt.SplitArena->scratchCount = 0;
-    opt.SplitArena->splitCount = 0;
-    ArenaPushSize(opt.SplitArena, 0, .Alignment = 4); // 'leak' up to 4 bytes here to keep the memory aligned
-}
-
-ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena)
-{
-    AssertMsg(Arena->splitCount > 0, "This split arena doesn't belong to the arena");
-    AssertMsg(Arena->base + Arena->size == SplitArena->base, "Split arenas must be rejoined as a stack; first in last out");
-    AssertMsg(SplitArena->scratchCount == 0, "Rejoining a split arena without Ending all its scratch arenas will cause conflicts with the original arena");
-    AssertMsg(SplitArena->splitCount == 0, "Rejoining a split arena without rejoining its split arenas will cause memory leaks");
-    SplitArena->base = 0;
-    SplitArena->used = 0;
-    Arena->size += SplitArena->size;
-    Arena->splitCount--;
-}
-
-ARENAPROC void ArenaSplitMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount)
-{
-    size_t splitSize = ArenaGetRemaining(Arena, .Alignment = 1) / (SplitArenaCount + 1);
-    for(size_t splitIdx = 0; splitIdx < SplitArenaCount; splitIdx++) ArenaSplit(Arena, SplitArenas[splitIdx], splitSize);
-}
-
-ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount)
-{
-    for(int64_t splitIdx = (int64_t)SplitArenaCount - 1; splitIdx >= 0; splitIdx--) ArenaRejoin(Arena, SplitArenas[splitIdx]);
-}
-
-ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena)
-{
-    scratch_arena scratch = {
-        .Arena = Arena,
-        .startMemOffset = Arena->used,
-    };
-    Arena->scratchCount += 1;
-
-    return scratch;
-}
-
-ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem)
-{
-    memory_arena *Arena = Scratch.Arena;
-    Assert(Arena->used >= Scratch.startMemOffset);
-    if(ZeroMem) {
-        mem_zero(Arena->base + Scratch.startMemOffset, Arena->used - Scratch.startMemOffset);
-    }
-    Arena->used = Scratch.startMemOffset;
-    Assert(Arena->scratchCount > 0);
-    Arena->scratchCount -= 1;
-}
-
-////////////////////////////////
-
-struct vl_globalcontext VL_globalContext = {0};
-
-VLIBPROC bool VL_Init(void)
-{
-    if(VL_globalContext.initted) {
-        return false; // Only do init once
-    }
-    VL_globalContext.initted = true;
-#if !defined(VICLIB_NO_PLATFORM)
-#if OS_WINDOWS
-    LARGE_INTEGER time;
-#ifdef __cplusplus
-    VL_globalContext.performanceFrequency = {0};
-#else
-    VL_globalContext.performanceFrequency = (LARGE_INTEGER){0};
-#endif
-
-    QueryPerformanceFrequency(&VL_globalContext.performanceFrequency);
-    QueryPerformanceCounter(&time);
-    u64 secs = time.QuadPart / VL_globalContext.performanceFrequency.QuadPart;
-    u64 nanos = (time.QuadPart % VL_globalContext.performanceFrequency.QuadPart) *
-        VL_NANOS_PER_SEC / VL_globalContext.performanceFrequency.QuadPart;
-    VL_globalContext.initTime = VL_NANOS_PER_SEC * secs + nanos;
-#elif OS_LINUX || OS_MAC
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    VL_globalContext.initTime = VL_NANOS_PER_SEC * ts.tv_sec + ts.tv_nsec;
-#else
-#error Unsupported
-#endif // OS
-#endif // !defined(VICLIB_NO_PLATFORM)
-
-    return true;
-}
-
-#if !defined(VICLIB_NO_PLATFORM)
-
-VLIBPROC bool VL_SetCurrentDir(const char *path)
-{
-#if OS_WINDOWS
-    return (bool)SetCurrentDirectory(path);
-#elif OS_LINUX || OS_MAC
-    return chdir(path) >= 0;
-#else
-#error Unsupported
-#endif
-}
-
-VLIBPROC bool VL_FileExists(const char *path)
-{
-#if _WIN32
-    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
-#else
-    return access(path, F_OK) == 0;
-#endif
-}
-
-#if !OS_WINDOWS
-#include <string.h> /* strstr */
-#include <ctype.h>
-bool IsDebuggerPresent(void)
-{
-    // https://stackoverflow.com/questions/3596781/how-to-detect-if-the-current-process-is-being-run-by-gdb
-    char buf[4096];
-    const int status_fd = open("/proc/self/status", O_RDONLY);
-    if (status_fd == -1)
-        return false;
-
-    const ssize_t num_read = read(status_fd, buf, sizeof(buf) - 1);
-    close(status_fd);
-
-    if (num_read <= 0)
-        return false;
-
-    buf[num_read] = '\0';
-    char tracerPidString[] = "TracerPid:";
-    const char *tracer_pid_ptr = strstr(buf, tracerPidString); // TODO: use ViewContains (when it is better)
-    if (!tracer_pid_ptr)
-        return false;
-    
-    for(const char* characterPtr = tracer_pid_ptr + sizeof(tracerPidString) - 1; characterPtr <= buf + num_read; ++characterPtr) {
-        if (isspace(*characterPtr))
-            continue;
-        else
-            return isdigit(*characterPtr) != 0 && *characterPtr != '0';
-    }
-
-    return false;
-}
-#endif
-
-VLIBPROC bool GetLastWriteTime(const char *file, u64 *WriteTime)
-{
-    bool ok = false;
-
-#if OS_WINDOWS
-    WIN32_FILE_ATTRIBUTE_DATA data;
-    if(GetFileAttributesEx(file, GetFileExInfoStandard, &data) &&
-        (uint64_t)data.nFileSizeHigh + (uint64_t)data.nFileSizeLow > 0)
-    {
-        *WriteTime = *(uint64_t*)&data.ftLastWriteTime;
-        ok = true;
-    }
-#elif OS_LINUX || OS_MAC
-    struct stat attr;
-    if(!stat(file, &attr) && attr.st_size > 0) {
-        ok = true;
-        *WriteTime = *(uint64_t*)&attr.st_mtim;
-    }
-#else
-#error Unsupported
-#endif
-
-    return ok;
-}
-
-VLIBPROC file_type VL_GetFileType(const char *path)
-{
-#if OS_WINDOWS
-    DWORD attr = GetFileAttributesA(path);
-    if(attr == INVALID_FILE_ATTRIBUTES) return VL_FILE_INVALID;
-    if(attr & FILE_ATTRIBUTE_DIRECTORY) return VL_FILE_DIRECTORY;
-    if(attr & FILE_ATTRIBUTE_REPARSE_POINT) return VL_FILE_SYMLINK;
-    return VL_FILE_REGULAR;
-#elif OS_LINUX || OS_MAC
-    struct stat statbuf;
-    if(lstat(path, &statbuf) < 0) return VL_FILE_INVALID;
-    if(S_ISREG(statbuf.st_mode)) return VL_FILE_REGULAR;
-    if(S_ISDIR(statbuf.st_mode)) return VL_FILE_DIRECTORY;
-    if(S_ISLNK(statbuf.st_mode)) return VL_FILE_SYMLINK;
-    return VL_FILE_OTHER;
-#else
-#error Unsupported
-#endif
-}
-
-VLIBPROC u64 VL_GetNanos(void)
-{
-#if OS_WINDOWS
-    AssertMsg(VL_globalContext.performanceFrequency.QuadPart != 0, "Error: You must call VL_Init() before calling VL_GetNanos()");
-
-    LARGE_INTEGER time;
-    QueryPerformanceCounter(&time);
-    u64 secs = time.QuadPart / VL_globalContext.performanceFrequency.QuadPart;
-    u64 nanos = (time.QuadPart % VL_globalContext.performanceFrequency.QuadPart) * 
-        VL_NANOS_PER_SEC / VL_globalContext.performanceFrequency.QuadPart;
-    return (VL_NANOS_PER_SEC * secs + nanos) - VL_globalContext.initTime;
-#elif OS_LINUX || OS_MAC
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (VL_NANOS_PER_SEC * ts.tv_sec + ts.tv_nsec) - VL_globalContext.initTime;
-#else
-#error Unsupported
-#endif
-}
-
-#if !defined(VICLIB_NO_FILE_IO)
-
-PUSH_IGNORE_UNINITIALIZED
-VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size)
-{
-    VL_ErrorNumber = ERROR_NO_ERROR;
-#if OS_WINDOWS
-    AssertMsg(Size != 0, "Size parameter must be a valid pointer");
-    char *result = 0;
-    HANDLE FileHandle = CreateFileA(File, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
-    bool ok = FileHandle != INVALID_HANDLE_VALUE;
-    if(!ok) {
-        DWORD Error = GetLastError();
-        switch(Error) {
-            case ERROR_INVALID_DRIVE: fallthrough;
-            case ERROR_PATH_NOT_FOUND: fallthrough;
-            case ERROR_FILE_NOT_FOUND: VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
-            case ERROR_ACCESS_DENIED: VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
-
-            default: VL_ErrorNumber = ERROR_READ_UNKNOWN; break;
-        }
-    }
-
-    LARGE_INTEGER FileSize;
-    if(ok) {
-        ok = (bool)GetFileSizeEx(FileHandle, &FileSize);
-        if(!ok) VL_ErrorNumber = ERROR_READ_UNKNOWN;
-    }
-
-    u64 Limit = READ_ENTIRE_FILE_MAX;
-
-    if(ok) {
-        ok = (u64)FileSize.QuadPart <= Limit;
-        if(!ok) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
-    }
-    u32 FileSizeU32 = (u32)FileSize.QuadPart;
-
-    size_t arenaMark = Arena->used;
-    if(ok) {
-        if(ArenaGetRemaining(Arena) < (size_t)FileSize.QuadPart) {
-            VL_ErrorNumber = ERROR_NO_MEM;
-            ok = false;
-        } else {
-            result = ArenaPushSize(Arena, FileSize.QuadPart);
-        }
-    }
-
-    if(ok) {
-        DWORD BytesRead;
-        if(ReadFile(FileHandle, result, FileSizeU32, &BytesRead, 0) && (FileSize.QuadPart == BytesRead))
-        {
-            *Size = FileSize.QuadPart;
-        } else {
-            VL_ErrorNumber = ERROR_READ_UNKNOWN;
-            mem_zero(Arena->base + arenaMark, Arena->used - arenaMark);
-            Arena->used = arenaMark;
-        }
-    }
-
-    CloseHandle(FileHandle);
-#elif OS_LINUX || OS_MAC
-    char *result = 0;
-    int fd = open(File, O_RDONLY);
-    if(fd == -1) {
-        if(errno == EACCES || errno == EPERM) VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED;
-        else if(errno == ENOMEM) VL_ErrorNumber = ERROR_NO_MEM;
-        else if(errno == EOVERFLOW) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
-        else if(errno == EBADF || errno == ENOENT)
-            VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-        else VL_ErrorNumber = ERROR_READ_UNKNOWN;
-        return 0;
-    }
-
-    struct stat stat;
-    if(fstat(fd, &stat) == -1) {
-        VL_ErrorNumber = ERROR_READ_UNKNOWN;
-        close(fd);
-        return 0;
-    }
-
-    size_t arenaMark = Arena->used;
-    if(ArenaGetRemaining(Arena) < (size_t)stat.st_size) {
-        VL_ErrorNumber = ERROR_NO_MEM;
-        close(fd);
-        return 0;
-    } else {
-        result = ArenaPushSize(Arena, (size_t)stat.st_size);
-    }
-
-    ssize_t bytesRead = read(fd, result, stat.st_size);
-    if(bytesRead != stat.st_size) {
-        VL_ErrorNumber = ERROR_READ_UNKNOWN;
-        close(fd);
-        mem_zero(Arena->base + arenaMark, Arena->used - arenaMark);
-        Arena->used = arenaMark;
-        return 0;
-    }
-
-    close(fd);
-
-    if(Size) *Size = stat.st_size;
-#else
-#error Unsupported
-#endif
-    return result;
-}
-RESTORE_WARNINGS
-
-bool ReadFileChunk(vl_file_chunk *Chunk, const char *File, u32 *ChunkSize)
-{
-    AssertMsg(Chunk->Buffer && Chunk->BufferSize, "Requires a valid buffer and a buffer size");
-    VL_ErrorNumber = 0;
-
-#if OS_WINDOWS
-    if(!Chunk->File) {
-        Chunk->File = CreateFileA(File, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
-        if(Chunk->File == INVALID_HANDLE_VALUE) {
-            DWORD Error = GetLastError();
-            switch(Error) {
-                case ERROR_INVALID_DRIVE: fallthrough;
-                case ERROR_PATH_NOT_FOUND: fallthrough;
-                case ERROR_FILE_NOT_FOUND: VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND; break;
-                case ERROR_ACCESS_DENIED: VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
-
-                default: VL_ErrorNumber = ERROR_READ_UNKNOWN; break;
-            }
-            return false;
-        }
-
-        LARGE_INTEGER FileSize;
-        if(GetFileSizeEx(Chunk->File, &FileSize) == 0) {
-            // NOTE: Shouldn't fail if CreateFile didn't fail
-            VL_ErrorNumber = ERROR_READ_UNKNOWN;
-            return false;
-        }
-
-        Chunk->RemainingFileSize = FileSize.QuadPart;
-    } else if(Chunk->RemainingFileSize == 0) {
-        CloseHandle(Chunk->File);
-        Chunk->File = 0;
-        return false;
-    }
-    size_t OutSize = min(Chunk->RemainingFileSize, (size_t)Chunk->BufferSize);
-
-    DWORD BytesRead;
-    if(ReadFile(Chunk->File, Chunk->Buffer, (u32)OutSize, &BytesRead, 0) && (OutSize == BytesRead))
-    {
-        *ChunkSize = (u32)OutSize;
-    } else {
-        VL_ErrorNumber = ERROR_READ_UNKNOWN;
-        return false;
-    }
-
-#elif OS_LINUX || OS_LINUX
-    if(!Chunk->didFirstIteration) {
-        Chunk->didFirstIteration = true;
-        Chunk->fd = open(File, O_RDONLY);
-        if(Chunk->fd == -1) {
-            if(errno == EACCES || errno == EPERM) VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED;
-            else if(errno == ENOMEM) VL_ErrorNumber = ERROR_NO_MEM;
-            else if(errno == EOVERFLOW) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
-            else if(errno == EBADF || errno == ENOENT)
-                VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-            else VL_ErrorNumber = ERROR_READ_UNKNOWN;
-            return false;
-        }
-
-        struct stat stat;
-        if(fstat(Chunk->fd, &stat) == -1) {
-            VL_ErrorNumber = ERROR_READ_UNKNOWN;
-            close(Chunk->fd);
-            return false;
-        }
-
-        Chunk->RemainingFileSize = stat.st_size;
-    } else if(Chunk->RemainingFileSize == 0) {
-        if(Chunk->fd > 2) close(Chunk->fd); // I don't think I should try to close stdin, stdout, stderr?
-        Chunk->didFirstIteration = false;
-        Chunk->fd = 0;
-        return false;
-    }
-
-    size_t OutSize = min(Chunk->RemainingFileSize, (size_t)Chunk->BufferSize);
-
-    if(OutSize == (size_t)read(Chunk->fd, Chunk->Buffer, OutSize)) {
-        *ChunkSize = (u32)OutSize;
-    } else {
-        VL_ErrorNumber = ERROR_READ_UNKNOWN;
-        return false;
-    }
-#else
-#error Unsupported
-#endif
-
-    Chunk->RemainingFileSize -= (u32)OutSize;
-    return true;
-}
-
-VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
-{
-    bool result = true;
-
-#if OS_WINDOWS
-    HANDLE fhandle = INVALID_HANDLE_VALUE;
-
-    fhandle = CreateFileA(File, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
-    if(fhandle == INVALID_HANDLE_VALUE) {
-        DWORD Error = GetLastError();
-        switch(Error) {
-            case ERROR_INVALID_DRIVE: fallthrough;
-            case ERROR_PATH_NOT_FOUND: fallthrough;
-            case ERROR_FILE_NOT_FOUND: VL_ErrorNumber = ERROR_WRITE_PATH_NOT_FOUND; break;
-            case ERROR_ACCESS_DENIED: VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED; break;
-
-            default: VL_ErrorNumber = ERROR_WRITE_UNKNOWN;
-        }
-        VL_ReturnDefer(false);
-    }
-
-    Assert(Size < 0xFFFFFFFFULL);
-    u8 *fData = (u8*)Data;
-    DWORD bytesToWriteTotal = (DWORD)Size;
-    DWORD bytesWrittenTotal = 0;
-    DWORD bytesWritten = 0;
-    while(bytesToWriteTotal > bytesWrittenTotal) {
-        if(!WriteFile(fhandle, fData, bytesToWriteTotal - bytesWrittenTotal, &bytesWritten, 0)) {
-            VL_ErrorNumber = ERROR_WRITE_UNKNOWN;
-            VL_ReturnDefer(false);
-        }
-        bytesWrittenTotal += bytesWritten;
-        fData += bytesWritten;
-    }
-
-defer:
-    if(fhandle != INVALID_HANDLE_VALUE) CloseHandle(fhandle);
-    return result;
-
-#elif OS_LINUX || OS_MAC
-    int fd = open(File, O_CREAT | O_WRONLY | O_TRUNC);
-    if(fd == -1) {
-        if(errno == EACCES || errno == EPERM) VL_ErrorNumber = ERROR_FILE_ACCESS_DENIED;
-        else if(errno == ENOMEM) VL_ErrorNumber = ERROR_NO_MEM;
-        else if(errno == EOVERFLOW) VL_ErrorNumber = ERROR_READ_FILE_TOO_BIG;
-        // this could happen if creating a file in a directory that doesn't exist I think?
-        else if(errno == EBADF || errno == ENOENT)
-            VL_ErrorNumber = ERROR_READ_FILE_NOT_FOUND;
-        else VL_ErrorNumber = ERROR_READ_UNKNOWN;
-        return false;
-    }
-
-    u8 *fData = (u8*)Data;
-    ssize_t bytesToWriteTotal = (ssize_t)Size;
-    ssize_t bytesWrittenTotal = 0;
-    while(bytesToWriteTotal > bytesWrittenTotal) {
-        ssize_t bytesWritten = write(fd, fData, bytesToWriteTotal - bytesWrittenTotal);
-        if(bytesWritten == -1) {
-            VL_ErrorNumber = ERROR_WRITE_UNKNOWN;
-            VL_ReturnDefer(false);
-        }
-        bytesWrittenTotal += bytesWritten;
-        fData += bytesWritten;
-    }
-
-defer:
-    close(fd);
-    return result;
-#else
-#error Unsupported
-#endif
-}
-
-#endif // !defined(VICLIB_NO_FILE_IO)
-
-VLIBPROC const char *VL_GetError(void) {
-    switch(VL_ErrorNumber) {
-        case ERROR_READ_UNKNOWN: return "Unknown read error";
-        case ERROR_WRITE_UNKNOWN: return "Unknown write error";
-        case ERROR_READ_FILE_NOT_FOUND: return "File not found";
-        case ERROR_WRITE_PATH_NOT_FOUND: return "Path not found"; /* A directory specified to get to the file does not exist */
-        case ERROR_FILE_ACCESS_DENIED: return "Access denied";
-        case ERROR_NO_MEM: return "No remaining memory";
-        case ERROR_READ_FILE_TOO_BIG: return "File too large";
-    
-        case ERROR_NO_ERROR:
-        default: return "Unknown error";
-    }
-}
-
-#endif // !defined(VICLIB_NO_PLATFORM)
-
-#ifndef VICLIB_NO_SORT
-
-bool int_less_than(const void *A, const void *B) {
-    return (*(int*)A < *(int*)B);
-}
-
-void VL_SwapSize(void *A, void *B, size_t Size)
-{
-    size_t i;
-    if((uintptr_t)A % sizeof(size_t) == 0 &&
-       (uintptr_t)B % sizeof(size_t) == 0 &&
-       Size % sizeof(size_t) == 0)
-    {
-        size_t temp;
-        size_t *APtr = (size_t*)A;
-        size_t *BPtr = (size_t*)B;
-
-        for(i = 0; i < Size/sizeof(size_t); i++) {
-            VL_Swap(*APtr, *BPtr);
-            APtr++; BPtr++;
-        }
-    }
-    else {
-        char temp;
-        char *APtr = (char*)A;
-        char *BPtr = (char*)B;
-
-        for(i = 0; i < Size; i++) {
-            VL_Swap(*APtr, *BPtr);
-            APtr++; BPtr++;
-        }
-    }
-}
-
-// introsort
-void Sort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
-{
-    // compute MaxDepth = 2*log_2(Count)
-    int MaxDepth = -2;
-    for(size_t i = Count; i != 0; i >>= 1) MaxDepth += 2;
-    VL_IntroSort(Data, 0, Count - 1, MaxDepth, ElementSize, less_than);
-}
-void VL_IntroSort(void *Data, size_t lo, size_t hi, int Depth, size_t ElementSize, bool (*less_than)(const void *, const void *))
-{
-    if(lo < hi) {
-        if((hi - lo + 1) < 16) {
-            VL_InsertionSort((u8*)Data + lo*ElementSize, hi - lo + 1, ElementSize, less_than);
-        }
-        else if(Depth == 0) {
-            VL_HeapSort((u8*)Data + lo*ElementSize, hi - lo + 1, ElementSize, less_than);
-        }
-        else {
-            size_t PivotIdx = (lo + hi)/2; // median of 3 could be better here, I'm not sure
-
-            VL_SwapSize((u8*)Data + PivotIdx*ElementSize, (u8*)Data + lo*ElementSize, ElementSize);
-            void *Pivot = (u8*)Data + lo*ElementSize;
-
-            size_t i = lo + 1;
-            for(size_t j = lo + 1; j < hi + 1; j++)
-            {
-                if(less_than((u8*)Data + j*ElementSize, Pivot)) {
-                    // swap(Arr[i], Arr[j]);
-                    VL_SwapSize((u8*)Data + i*ElementSize, (u8*)Data + j*ElementSize, ElementSize);
-                    i++;
-                }
-            }
-            // swap(Arr[lo], Arr[i-1]);
-            VL_SwapSize((u8*)Data + lo*ElementSize, (u8*)Data + (i-1)*ElementSize, ElementSize);
-            PivotIdx = i - 1;
-
-            if(PivotIdx > 0) VL_IntroSort(Data, lo, PivotIdx - 1, Depth - 1, ElementSize, less_than);
-            VL_IntroSort(Data, PivotIdx + 1, hi, Depth - 1, ElementSize, less_than);
-        }
-    }
-}
-
-void VL_InsertionSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
-{
-    for(size_t i = 1; i < Count; i++)
-    {
-        void *Val = (u8*)Data + i*ElementSize;
-
-        int64_t j = i - 1;
-        for(;j >= 0 && less_than(Val, (u8*)Data + j*ElementSize); j--)
-        {
-            mem_copy((u8*)Data + (j+1)*ElementSize, (u8*)Data + j*ElementSize, ElementSize);
-        }
-        mem_copy((u8*)Data + (j+1)*ElementSize, Val, ElementSize);
-    }
-}
-void VL_HeapSort(void *Data, size_t Count, size_t ElementSize, bool (*less_than)(const void *, const void *))
-{
-    // left child = 2*i + 1
-    // right child = 2*i + 2
-    // parent = (i-1)/2 (truncated)
-
-    for(size_t Start = (Count - 2) / 2; Start > 0; Start--) {
-        size_t Root = Start;
-        while(2*Root + 1 < Count) {
-            size_t Child = 2*Root + 1;
-            if(Child + 1 < Count && less_than((u8*)Data + Child*ElementSize, (u8*)Data + (Child+1)*ElementSize)) {
-                Child++;
-            }
-            
-            if(less_than((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize)) {
-                VL_SwapSize((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize, ElementSize);
-                Root = Child;
-            } else {
-                break;
-            }
-        }
-    }
-    
-    for(size_t End = Count - 1; End > 0; End--) {
-        VL_SwapSize(Data, (u8*)Data + End*ElementSize, ElementSize);
-        
-        size_t Root = 0;
-        while(2*Root + 1 < End) {
-            size_t Child = 2*Root + 1;
-            if(Child + 1 < End && less_than((u8*)Data + Child*ElementSize, (u8*)Data + (Child+1)*ElementSize)) {
-                Child++;
-            }
-            
-            if(less_than((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize)) {
-                VL_SwapSize((u8*)Data + Root*ElementSize, (u8*)Data + Child*ElementSize, ElementSize);
-                Root = Child;
-            } else {
-                break;
-            }
-        }
-    }
-}
-
-#endif // !defined(VICLIB_NO_SORT)
-#endif // VICLIB_IMPLEMENTATION
 #endif //VICLIB_H
