@@ -122,7 +122,6 @@ VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src_path, const char 
 VLIBPROC bool VL_CopyDirectoryRecursively_Opt(struct VL_CopyDirectoryRecursively_opts opt);
 VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, vl_file_paths *children);
 VLIBPROC bool VL_ReadEntireDir(const char *parent, vl_file_paths *children);
-VLIBPROC bool VL_WriteEntireFile(const char *path, const void *data, size_t size);
 VLIBPROC bool VL_DeleteFile(const char *path);
 
 // Initial capacity of a dynamic array
@@ -856,39 +855,6 @@ VLIBPROC bool VL_ReadEntireDir(const char *parent, vl_file_paths *children)
 
 defer:
     if (dir) closedir(dir);
-    return result;
-}
-
-VLIBPROC bool VL_WriteEntireFile(const char *path, const void *data, size_t size)
-{
-    bool result = true;
-
-    const char *buf = NULL;
-    FILE *f = fopen(path, "wb");
-    if(f == NULL) {
-        VL_Log(VL_ERROR, "Could not open file %s for writing: %s\n", path, strerror(errno));
-        VL_ReturnDefer(false);
-    }
-
-    //           len
-    //           v
-    // aaaaaaaaaa
-    //     ^
-    //     data
-
-    buf = (const char*)data;
-    while (size > 0) {
-        size_t n = fwrite(buf, 1, size, f);
-        if(ferror(f)) {
-            VL_Log(VL_ERROR, "Could not write into file %s: %s\n", path, strerror(errno));
-            VL_ReturnDefer(false);
-        }
-        size -= n;
-        buf  += n;
-    }
-
-defer:
-    if(f) fclose(f);
     return result;
 }
 
