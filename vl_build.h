@@ -91,6 +91,17 @@ VLIBPROC void fd_Close(vl_fd fd);
         VL_Log(VL_INFO, "%sTime taken: "PRINT_TIME_Fmt, msg, PRINT_TIME_Arg(glue(timer_, __LINE__))); \
     } while(0)
 
+/* Returns a struct initializer with items in the first element and count in the second */
+#define VL_GetSlice(type, ...) \
+    {(type[]){__VA_ARGS__}, sizeof((type[]){__VA_ARGS__})/sizeof(type)}
+#define VL_GetDaSlice(type, ...) \
+    {.items = (type[]){__VA_ARGS__}, \
+     .count = sizeof((type[]){__VA_ARGS__})/sizeof(type), \
+     .capacity = 0}
+
+#define VL_GetStrSlice(...) VL_GetSlice(const char*, __VA_ARGS__)
+#define VL_GetDaStrSlice(...) VL_GetDaSlice(const char*, __VA_ARGS__)
+
 typedef enum {
     VL_ECHO,
     VL_INFO,
@@ -135,10 +146,13 @@ VLIBPROC bool VL_DeleteFile(const char *path);
 #define VL_DECLTYPE_CAST(T)
 #endif
 
-#define DaReserve(da, ExpectedCapacity)                                                 \
+#define DaReserve(da, ExpectedCapacity)                                                  \
     do {                                                                                 \
         if((ExpectedCapacity) > (da)->capacity) {                                        \
             if((da)->capacity == 0) {                                                    \
+                AssertMsg((da)->count == 0,                                              \
+                  "Error: the dyn array has a count > 0 but a 0 capacity\n"              \
+                  "A possible cause is VL_GetSlice. It should only be used when not resizing"); \
                 (da)->capacity = VL_DA_INIT_CAP;                                         \
             }                                                                            \
             while((ExpectedCapacity) > (da)->capacity) {                                 \
@@ -149,21 +163,21 @@ VLIBPROC bool VL_DeleteFile(const char *path);
         }                                                                                \
     } while(0)
 
-#define DaAppendMany(da, NewItems, NewItemCount)                                       \
+#define DaAppendMany(da, NewItems, NewItemCount)                                        \
     do {                                                                                \
-        DaReserve((da), (da)->count + (NewItemCount));                                 \
+        DaReserve((da), (da)->count + (NewItemCount));                                  \
         memcpy((da)->items + (da)->count, (NewItems), (NewItemCount)*sizeof(*(da)->items)); \
         (da)->count += (NewItemCount);                                                  \
     } while(0)
 
-#define DaAppend(da, item)                  \
+#define DaAppend(da, item)                   \
     do {                                     \
-        DaReserve((da), (da)->count + 1);   \
+        DaReserve((da), (da)->count + 1);    \
         (da)->items[(da)->count++] = (item); \
     } while(0)
 
 #define DaFree(da) VL_FREE((da).items)
-#define DaRemoveUnordered(da, i)                    \
+#define DaRemoveUnordered(da, i)                     \
     do {                                             \
         size_t j = (i);                              \
         Assert(j < (da)->count);                     \
@@ -388,14 +402,67 @@ VLIBPROC void VL_ccOutput_Opt(struct compiler_info_opts opt, const char *output)
 VLIBPROC void VL_ccDebug_Opt(struct compiler_info_opts opt);
 #define VL_ccDebug(Cmd, ...) VL_ccDebug_Opt((struct compiler_info_opts){.cmd = (Cmd), __VA_ARGS__})
 
-VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, size_t libcount);
-#define VL_ccLibs(Cmd, l1, ...) VL_ccLibs_Opt((struct compiler_info_opts){.cmd = (Cmd)}, \
-    ((const char*[]){l1, __VA_ARGS__}), sizeof((const char*[]){l1, __VA_ARGS__})/sizeof(const char*))
-#define VL_ccLibsC(Cmd, CC, l1, ...) VL_ccLibs_Opt((struct compiler_info_opts){.cmd = (Cmd), .cc = (CC)}, \
-    ((const char*[]){l1, __VA_ARGS__}), sizeof((const char*[]){l1, __VA_ARGS__})/sizeof(const char*))
+VLIBPROC void VL_ccLib_Opt(struct compiler_info_opts opt, const char *lib);
+#define VL_ccLib(Cmd, lib, ...) VL_ccLib_Opt((struct compiler_info_opts){.cmd = (Cmd), __VA_ARGS__}, lib)
+
+VLIBPROC void VL_ccIncludepath_Opt(struct compiler_info_opts opt, const char *includepath);
+#define VL_ccIncludePath(Cmd, includepath, ...) VL_ccLibpath_Opt((struct compiler_info_opts){.cmd = (Cmd), __VA_ARGS__}, includepath)
 
 VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpath);
 #define VL_ccLibpath(Cmd, libpath, ...) VL_ccLibpath_Opt((struct compiler_info_opts){.cmd = (Cmd), __VA_ARGS__}, libpath)
+
+typedef enum {
+    Compile_Executable = 0,
+    Compile_DynamicLibrary,
+} vl_compile_type;
+
+typedef enum {
+    Optimize_Nothing = 0,
+    Optimize_Speed = 1, /* -O3 for gcc, clang, -O2 for msvc */
+    Optimize_Size = 2, /* -Os for gcc, clang, msvc */
+} vl_optimization_option;
+
+typedef struct {
+    vl_c_compiler cc;
+    vl_compile_type type;
+    vl_optimization_option optimize;
+
+    bool debug; /* Adds "-g", "-Zi" or nothing */
+    bool incremental; /* only for msvc */
+    bool gcSections; /* adds "-Wl,--gc-sections", "-opt:ref" or nothing */
+    bool warnings; /* adds "-Wall -Wextra", "-W4" or nothing */
+    bool warningsAsErrors; /* adds "-Werror", "-WX" or nothing */
+    vl_file_paths sourceFiles;
+    const char *outputPath;
+    vl_file_paths includePaths;
+    vl_file_paths extraCompilerFlags;
+
+    /* One of these will get chosen, use for disabling specific warnings, etc. */
+    vl_file_paths extraMsvcFlags; /* msvc specific flags */
+    vl_file_paths extraGccClangFlags; /* common gcc/clang/tcc flags */
+    vl_file_paths extraGccFlags; /* gcc specific flags */
+    vl_file_paths extraClangFlags; /* clang specific flags */
+
+    vl_file_paths libPaths;
+    vl_file_paths libs;
+} vl_compile_ctx;
+
+/* Example usage:
+```c
+vl_cmd cmd = {0};
+vl_compile_ctx ctx = {
+    .debug = true,
+    .warnings = true,
+    .sourceFiles = VL_GetDaStrSlice("main.c"),
+    .outputPath = "example", // extension is added in VL_SetupCCompile()
+};
+VL_SetupCCompile(&cmd, &ctx); // default output is executable
+if(!CmdRun(&cmd)) {
+    fprintf(stderr, "Fail");
+}
+```
+ */
+VLIBPROC void VL_SetupCCompile(vl_cmd *cmd, vl_compile_ctx *ctx);
 
 #if OS_WINDOWS
 # if COMPILER_CL
@@ -1707,7 +1774,7 @@ VLIBPROC void VL_ccDebug_Opt(struct compiler_info_opts opt)
     }
 }
 
-VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, size_t libcount)
+VLIBPROC void VL_ccLib_Opt(struct compiler_info_opts opt, const char *lib)
 {
 #if OS_WINDOWS
     if(opt.cc == CCompiler_MSVC && !opt.cmd->msvc_linkflags) {
@@ -1716,18 +1783,21 @@ VLIBPROC void VL_ccLibs_Opt(struct compiler_info_opts opt, const char **libs, si
     }
 #endif
 
-    for(size_t i = 0; i < libcount; i++) {
-        switch(opt.cc) {
-            case CCompiler_GCC:
-            case CCompiler_TCC:
-            case CCompiler_Clang: {
-                CmdAppend(opt.cmd, "-l", libs[i]);
-            } break;
-            case CCompiler_MSVC: {
-                CmdAppend(opt.cmd, temp_sprintf("%s.lib", libs[i]));
-            } break;
-        }
+    switch(opt.cc) {
+        case CCompiler_GCC:
+        case CCompiler_TCC:
+        case CCompiler_Clang: {
+            CmdAppend(opt.cmd, "-l", lib);
+        } break;
+        case CCompiler_MSVC: {
+            CmdAppend(opt.cmd, temp_sprintf("%s.lib", lib));
+        } break;
     }
+}
+
+VLIBPROC void VL_ccIncludepath_Opt(struct compiler_info_opts opt, const char *includepath)
+{
+    CmdAppend(opt.cmd, "-I", includepath);
 }
 
 VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpath)
@@ -1748,6 +1818,97 @@ VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpat
         case CCompiler_MSVC: {
             CmdAppend(opt.cmd, temp_sprintf("/libpath:%s", libpath));
         } break;
+    }
+}
+
+VLIBPROC void VL_SetupCCompile(vl_cmd *cmd, vl_compile_ctx *ctx)
+{
+    struct compiler_info_opts info = {
+        .cmd = cmd,
+        .cc = ctx->cc,
+    };
+
+    const char *output = ctx->outputPath;
+#if OS_WINDOWS
+    if(ctx->type == Compile_Executable) {
+        output = temp_sprintf("%s.exe", ctx->outputPath);
+    } else if(ctx->type == Compile_DynamicLibrary) {
+        output = temp_sprintf("%s.dll", ctx->outputPath);
+    }
+#else
+    if(ctx->type == Compile_Executable) {
+    } else if(ctx->type == Compile_DynamicLibrary) {
+        output = temp_sprintf("%s" VL_DLL_EXT, ctx->outputPath);
+    }
+#endif
+
+    VL_cc_Opt(info);
+    DaAppendMany(cmd, ctx->sourceFiles.items, ctx->sourceFiles.count);
+    VL_ccOutput_Opt(info, output);
+
+    if(ctx->optimize == Optimize_Speed) {
+        if(ctx->cc == CCompiler_MSVC) {
+            CmdAppend(cmd, "-O2");
+        } else if((ctx->cc == CCompiler_GCC) || (ctx->cc == CCompiler_Clang)) {
+            CmdAppend(cmd, "-O3");
+        }
+    } else if(ctx->optimize == Optimize_Size) {
+        if(ctx->cc != CCompiler_TCC) {
+            CmdAppend(cmd, "-Os");
+        }
+    }
+
+    if(ctx->debug) VL_ccDebug_Opt(info);
+    if(ctx->warnings) VL_ccWarnings_Opt(info);
+    if(ctx->warningsAsErrors) VL_ccWarningsAsErrors_Opt(info);
+    for(size_t i = 0; i < ctx->includePaths.count; i++) {
+        VL_ccIncludepath_Opt(info, ctx->includePaths.items[i]);
+    }
+
+    /* extra compiler flags */
+    DaAppendMany(cmd, ctx->extraCompilerFlags.items, ctx->extraCompilerFlags.count);
+    if(ctx->cc == CCompiler_MSVC) {
+        DaAppendMany(cmd, ctx->extraMsvcFlags.items, ctx->extraMsvcFlags.count);
+    } else {
+        DaAppendMany(cmd, ctx->extraGccClangFlags.items, ctx->extraGccClangFlags.count);
+        if(ctx->cc == CCompiler_GCC) {
+            DaAppendMany(cmd, ctx->extraGccFlags.items, ctx->extraGccFlags.count);
+        } else if(ctx->cc == CCompiler_Clang) {
+            DaAppendMany(cmd, ctx->extraClangFlags.items, ctx->extraClangFlags.count);
+        }
+    }
+
+    /* after "/link" in msvc */
+    for(size_t i = 0; i < ctx->libPaths.count; i++) {
+        VL_ccLibpath_Opt(info, ctx->libPaths.items[i]);
+    }
+
+    for(size_t i = 0; i < ctx->libs.count; i++) {
+        VL_ccLib_Opt(info, ctx->libs.items[i]);
+    }
+
+    if((ctx->cc == CCompiler_MSVC) && !cmd->msvc_linkflags) {
+        CmdAppend(cmd, "/link");
+        cmd->msvc_linkflags = true;
+    }
+
+    if(ctx->type == Compile_DynamicLibrary) {
+        if(ctx->cc == CCompiler_MSVC) {
+            CmdAppend(cmd, "/DLL");
+        } else {
+            CmdAppend(cmd, "-shared");
+        }
+    }
+
+    if(!ctx->incremental && (ctx->cc == CCompiler_MSVC)) {
+        CmdAppend(cmd, "-incremental:no");
+    }
+    if(ctx->gcSections) {
+        if(ctx->cc == CCompiler_MSVC) {
+            CmdAppend(cmd, "-opt:ref");
+        } else {
+            CmdAppend(cmd, "-Wl,--gc-sections");
+        }
     }
 }
 
