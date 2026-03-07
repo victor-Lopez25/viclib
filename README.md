@@ -6,7 +6,6 @@ Header-only library which does some basic stuff you might want in a lot of progr
  - Assertions
  - Arena implementation
  - Some intrinsics
- - Unsigned/signed 128bit operations (by Mārtiņš Možeiko: https://github.com/mmozeiko/overflow/blob/main/x128/x128.h)
  - String view implementation (view_* functions)
  - Simple memory functions (mem_copy, mem_zero, mem_compare)
  - Some file operations (filetime, read/write entirefile, getfiletype)
@@ -144,9 +143,6 @@ Check ErrorNumber when errors occur.
  - stb header-only libraries - https://github.com/nothings/stb
  - tsoding's string view implementation - https://github.com/tsoding/sv
  - tsoding's nobuild - https://github.com/tsoding/nob.h
-
-### Acknowledgements
- - x128 ops implementation by Mārtiņš Možeiko: https://github.com/mmozeiko/overflow/blob/main/x128/x128.h
 
 ### Licences
 viclib.h is licenced under MIT, as shown in the file itself. You are free to change the name of the file if you modify it, just keep the license as "original viclib license by Victor Lopez:\n>mit license here<".
