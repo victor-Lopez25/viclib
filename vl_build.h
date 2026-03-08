@@ -387,6 +387,12 @@ struct compiler_info_opts {
 # endif
 #endif
 
+#if COMPILER_CL
+# define VL_OBJ_EXT ".obj"
+#elif COMPILER_GCC || COMPILER_CLANG || COMPILER_TCC
+# define VL_OBJ_EXT ".o"
+#endif
+
 VLIBPROC void VL_cc_Opt(struct compiler_info_opts opt);
 #define VL_cc(Cmd, ...) VL_cc_Opt((struct compiler_info_opts){.cmd = (Cmd), __VA_ARGS__})
 
@@ -413,6 +419,7 @@ VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpat
 
 typedef enum {
     Compile_Executable = 0,
+    Compile_Object,
     Compile_DynamicLibrary,
 } vl_compile_type;
 
@@ -1829,22 +1836,32 @@ VLIBPROC void VL_SetupCCompile(vl_cmd *cmd, vl_compile_ctx *ctx)
     };
 
     const char *output = ctx->outputPath;
+    AssertMsg(output || (ctx->type == Compile_Object), 
+        "Output path must be specified unless compiling for object file output");
+
 #if OS_WINDOWS
     if(ctx->type == Compile_Executable) {
         output = temp_sprintf("%s.exe", ctx->outputPath);
-    } else if(ctx->type == Compile_DynamicLibrary) {
-        output = temp_sprintf("%s.dll", ctx->outputPath);
     }
 #else
-    if(ctx->type == Compile_Executable) {
+    if(ctx->type == Compile_Executable) {}
+#endif
+    else if(ctx->type == Compile_Object) {
+        if(output) {
+            if(ctx->cc == CCompiler_MSVC) {
+                output = temp_sprintf("%s.obj", ctx->outputPath);
+            } else {
+                output = temp_sprintf("%s.o", ctx->outputPath);
+            }
+        }
     } else if(ctx->type == Compile_DynamicLibrary) {
         output = temp_sprintf("%s" VL_DLL_EXT, ctx->outputPath);
     }
-#endif
 
     VL_cc_Opt(info);
     DaAppendMany(cmd, ctx->sourceFiles.items, ctx->sourceFiles.count);
-    VL_ccOutput_Opt(info, output);
+    /* If compiling for an object, output file path is autoassigned by compiler unless specified */
+    if(output) VL_ccOutput_Opt(info, output);
 
     if(ctx->optimize == Optimize_Speed) {
         if(ctx->cc == CCompiler_MSVC) {
