@@ -24,12 +24,12 @@ Header-only library which does some basic stuff you might want in a lot of progr
 
 ### vl_serialize.h:
 Serialization library to serialize data into textual formats.
-Supported serialization formats:
+> Supported serialization formats:
  - JSON
  - C99 Initializers
  - XML
  - TOML
-Supported deserialization formats:
+> Supported deserialization formats:
  - JSON
 
 To download the header only libs:
