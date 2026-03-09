@@ -421,6 +421,7 @@ typedef enum {
     Compile_Executable = 0,
     Compile_Object,
     Compile_DynamicLibrary,
+    Compile_StaticLibrary,
 } vl_compile_type;
 
 typedef enum {
@@ -440,7 +441,8 @@ typedef struct {
     bool warnings; /* adds "-Wall -Wextra", "-W4" or nothing */
     bool warningsAsErrors; /* adds "-Werror", "-WX" or nothing */
     vl_file_paths sourceFiles;
-    const char *outputPath;
+    const char *output;
+    const char *outputDir;
     vl_file_paths includePaths;
     vl_file_paths extraCompilerFlags;
 
@@ -463,13 +465,15 @@ vl_compile_ctx ctx = {
     .sourceFiles = VL_GetDaStrSlice("main.c"),
     .outputPath = "example", // extension is added in VL_SetupCCompile()
 };
-VL_SetupCCompile(&cmd, &ctx); // default output is executable
-if(!CmdRun(&cmd)) {
-    fprintf(stderr, "Fail");
+// default output is executable
+if(!VL_SetupCCompile(&cmd, &ctx)) {
+    fprintf(stderr, "Failed to compile main.c\n");
 }
 ```
  */
-VLIBPROC void VL_SetupCCompile(vl_cmd *cmd, vl_compile_ctx *ctx);
+VLIBPROC bool VL_CCompile_Opt(vl_compile_ctx *ctx, vl_cmd_opts opt);
+#define VL_CCompile(Cmd, ctx, ...) \
+    VL_CCompile_Opt((ctx), (vl_cmd_opts){.cmd = (Cmd), __VA_ARGS__})
 
 #if OS_WINDOWS
 # if COMPILER_CL
@@ -1828,20 +1832,20 @@ VLIBPROC void VL_ccLibpath_Opt(struct compiler_info_opts opt, const char *libpat
     }
 }
 
-VLIBPROC void VL_SetupCCompile(vl_cmd *cmd, vl_compile_ctx *ctx)
+VLIBPROC bool VL_CCompile_Opt(vl_compile_ctx *ctx, vl_cmd_opts opt)
 {
     struct compiler_info_opts info = {
-        .cmd = cmd,
+        .cmd = opt.cmd,
         .cc = ctx->cc,
     };
 
-    const char *output = ctx->outputPath;
+    const char *output = temp_sprintf("%s/%s", ctx->outputDir, ctx->output);
     AssertMsg(output || (ctx->type == Compile_Object), 
         "Output path must be specified unless compiling for object file output");
 
 #if OS_WINDOWS
     if(ctx->type == Compile_Executable) {
-        output = temp_sprintf("%s.exe", ctx->outputPath);
+        output = temp_sprintf("%s.exe", output);
     }
 #else
     if(ctx->type == Compile_Executable) {}
@@ -1849,29 +1853,50 @@ VLIBPROC void VL_SetupCCompile(vl_cmd *cmd, vl_compile_ctx *ctx)
     else if(ctx->type == Compile_Object) {
         if(output) {
             if(ctx->cc == CCompiler_MSVC) {
-                output = temp_sprintf("%s.obj", ctx->outputPath);
+                output = temp_sprintf("%s.obj", output);
             } else {
-                output = temp_sprintf("%s.o", ctx->outputPath);
+                output = temp_sprintf("%s.o", output);
             }
         }
     } else if(ctx->type == Compile_DynamicLibrary) {
-        output = temp_sprintf("%s" VL_DLL_EXT, ctx->outputPath);
+        output = temp_sprintf("%s" VL_DLL_EXT, output);
+    } else if(ctx->type == Compile_StaticLibrary) {
+        if(ctx->cc == CCompiler_MSVC) {
+            output = temp_sprintf("%s.obj", output);
+        } else {
+            output = temp_sprintf("%s.o", output);
+        }
     }
 
     VL_cc_Opt(info);
-    DaAppendMany(cmd, ctx->sourceFiles.items, ctx->sourceFiles.count);
+
+    // compile only, don't link
+    if((ctx->type == Compile_StaticLibrary) ||
+       (ctx->type == Compile_Object))
+    {
+        CmdAppend(opt.cmd, "-c");
+    }
+
+    DaAppendMany(opt.cmd, ctx->sourceFiles.items, ctx->sourceFiles.count);
     /* If compiling for an object, output file path is autoassigned by compiler unless specified */
-    if(output) VL_ccOutput_Opt(info, output);
+    if(output) {
+        if(((ctx->type == Compile_Object) || (ctx->type == Compile_StaticLibrary)) && (ctx->cc == CCompiler_MSVC))
+        {
+            CmdAppend(opt.cmd, temp_sprintf("-Fo:%s", output));
+        } else {
+            VL_ccOutput_Opt(info, output);
+        }
+    }
 
     if(ctx->optimize == Optimize_Speed) {
         if(ctx->cc == CCompiler_MSVC) {
-            CmdAppend(cmd, "-O2");
+            CmdAppend(opt.cmd, "-O2");
         } else if((ctx->cc == CCompiler_GCC) || (ctx->cc == CCompiler_Clang)) {
-            CmdAppend(cmd, "-O3");
+            CmdAppend(opt.cmd, "-O3");
         }
     } else if(ctx->optimize == Optimize_Size) {
         if(ctx->cc != CCompiler_TCC) {
-            CmdAppend(cmd, "-Os");
+            CmdAppend(opt.cmd, "-Os");
         }
     }
 
@@ -1883,15 +1908,15 @@ VLIBPROC void VL_SetupCCompile(vl_cmd *cmd, vl_compile_ctx *ctx)
     }
 
     /* extra compiler flags */
-    DaAppendMany(cmd, ctx->extraCompilerFlags.items, ctx->extraCompilerFlags.count);
+    DaAppendMany(opt.cmd, ctx->extraCompilerFlags.items, ctx->extraCompilerFlags.count);
     if(ctx->cc == CCompiler_MSVC) {
-        DaAppendMany(cmd, ctx->extraMsvcFlags.items, ctx->extraMsvcFlags.count);
+        DaAppendMany(opt.cmd, ctx->extraMsvcFlags.items, ctx->extraMsvcFlags.count);
     } else {
-        DaAppendMany(cmd, ctx->extraGccClangFlags.items, ctx->extraGccClangFlags.count);
+        DaAppendMany(opt.cmd, ctx->extraGccClangFlags.items, ctx->extraGccClangFlags.count);
         if(ctx->cc == CCompiler_GCC) {
-            DaAppendMany(cmd, ctx->extraGccFlags.items, ctx->extraGccFlags.count);
+            DaAppendMany(opt.cmd, ctx->extraGccFlags.items, ctx->extraGccFlags.count);
         } else if(ctx->cc == CCompiler_Clang) {
-            DaAppendMany(cmd, ctx->extraClangFlags.items, ctx->extraClangFlags.count);
+            DaAppendMany(opt.cmd, ctx->extraClangFlags.items, ctx->extraClangFlags.count);
         }
     }
 
@@ -1904,29 +1929,47 @@ VLIBPROC void VL_SetupCCompile(vl_cmd *cmd, vl_compile_ctx *ctx)
         VL_ccLib_Opt(info, ctx->libs.items[i]);
     }
 
-    if((ctx->cc == CCompiler_MSVC) && !cmd->msvc_linkflags) {
-        CmdAppend(cmd, "/link");
-        cmd->msvc_linkflags = true;
+    if((ctx->cc == CCompiler_MSVC) && !opt.cmd->msvc_linkflags) {
+        CmdAppend(opt.cmd, "/link");
+        opt.cmd->msvc_linkflags = true;
     }
 
     if(ctx->type == Compile_DynamicLibrary) {
         if(ctx->cc == CCompiler_MSVC) {
-            CmdAppend(cmd, "/DLL");
+            CmdAppend(opt.cmd, "/DLL");
         } else {
-            CmdAppend(cmd, "-shared");
+            CmdAppend(opt.cmd, "-shared");
         }
     }
 
     if(!ctx->incremental && (ctx->cc == CCompiler_MSVC)) {
-        CmdAppend(cmd, "-incremental:no");
+        CmdAppend(opt.cmd, "-incremental:no");
     }
     if(ctx->gcSections) {
         if(ctx->cc == CCompiler_MSVC) {
-            CmdAppend(cmd, "-opt:ref");
+            CmdAppend(opt.cmd, "-opt:ref");
         } else {
-            CmdAppend(cmd, "-Wl,--gc-sections");
+            CmdAppend(opt.cmd, "-Wl,--gc-sections");
         }
     }
+
+    bool ok = CmdRun_Opt(opt);
+
+    if(ok && ctx->type == Compile_StaticLibrary) {
+        if(ctx->cc == CCompiler_MSVC) {
+            CmdAppend(opt.cmd, "lib", "-nologo", output);
+        } else {
+            CmdAppend(opt.cmd, "ar", "rcs", 
+                temp_sprintf("%s/lib%s.a", ctx->outputDir, ctx->output), output);
+        }
+
+        if(opt.async) {
+            VL_ProcWait(opt.async->items[opt.async->count - 1]);
+        }
+        ok = CmdRun_Opt(opt);
+    }
+
+    return ok;
 }
 
 #if OS_WINDOWS

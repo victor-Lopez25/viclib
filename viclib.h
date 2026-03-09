@@ -301,6 +301,9 @@ typedef double   f64;
 #  if !defined(QUIET_ASSERT)
 #   define QUIET_ASSERT
 #   pragma message("Warning: Using quiet assert since stdio.h is not included")
+#  endif
+
+#  if defined(QUIET_ASSERT)
 #   define AssertAlways(e) do{ if(!(e)) { DebugBreakpoint; } }while(0)
 #   define AssertMsgAlways(e, msg) AssertAlways(e)
 #  endif
