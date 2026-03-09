@@ -143,17 +143,18 @@ if(!data) {
 vl_serialize_context ctx = GetDeserializeContext(SerializeType_JSON, .buffer = data, .buffer_size = fsize);
 
 VL_ObjectBegin(&ctx);
-  VL_AttributeName(&ctx, "somenullobj");
-  VL_SerializeNull(&ctx);
+  if(VL_AttributeName(&ctx, "somenullobj")) {
+    VL_SerializeNull(&ctx); // this will expect 'null'
+  }
 
-  VL_AttributeName(&ctx, "string-values");
-  // if specified, a name will be used for XML array elements, else it will use the names 'element n'
-  VL_ArrayBegin(&ctx, "stringval");
-    char *s;
-    view v;
-    VL_SerializeOpString(&ctx, &s); // returns a strdup
-    VL_SerializeOpView(&ctx, &v); // returns a slice
-  VL_ArrayEnd(&ctx);
+  if(VL_AttributeName(&ctx, "string-values")) {
+    VL_ArrayBegin(&ctx, "stringval");
+      char *s;
+      view v;
+      VL_SerializeOpString(&ctx, &s); // returns a strdup
+      VL_SerializeOpView(&ctx, &v); // returns a slice
+    VL_ArrayEnd(&ctx);
+  }
 VL_ObjectEnd(&ctx);
 ```
 
