@@ -6,7 +6,7 @@ Header-only library which does some basic stuff you might want in a lot of progr
  - Assertions
  - Arena implementation
  - Some intrinsics
- - String view implementation (view_* functions)
+ - String view implementation (View* functions)
  - Simple memory functions (mem_copy, mem_zero, mem_compare)
  - Some file operations (filetime, read/write entirefile, getfiletype)
  - Sort() which performs an introsort
@@ -14,7 +14,7 @@ Header-only library which does some basic stuff you might want in a lot of progr
 ### vl_build.h includes:
  - viclib.h since it depends on it
  - string builder implementation (string_builder)
- - list implementation (da_*)
+ - list implementation (Da*)
  - File operations (read, write, copy, delete, rename)
  - Directory operations (get cwd, set cwd, pushd, popd, readdir, copy directory recursively)
  - Processes, in async too (cmd*)
@@ -24,11 +24,13 @@ Header-only library which does some basic stuff you might want in a lot of progr
 
 ### vl_serialize.h:
 Serialization library to serialize data into textual formats.
-Supported formats:
+Supported serialization formats:
  - JSON
  - C99 Initializers
  - XML
  - TOML
+Supported deserialization formats:
+ - JSON
 
 To download the header only libs:
 ```console
@@ -101,6 +103,8 @@ int main(int argc, char **argv)
 
 ### vl_serialize.h:
 ```c
+/* serialization example */
+
 // get a context, here you specify JSON, C99_Initializer, XML or TOML
 // indent controls how many spaces to add (indent = 0 or unspecified means everything in the same line)
 vl_serialize_context ctx = GetSerializeContext(SerializeType_JSON, .indent = 2);
@@ -120,6 +124,35 @@ VL_ObjectEnd(&ctx);
 // output to stdout, to file, etc.
 printf(VIEW_FMT"\n", VIEW_ARG(ctx.output));
 // this also works: printf("%.*s\n", (int)ctx.output.count, ctx.output.items);
+```
+
+### Important note for deserialization
+Floating point parsing for exponents is kind of bad right now, it will be made better soon
+```c
+/* deserialization example */
+
+size_t fsize;
+char *data = ReadEntireFile(&ArenaTemp, "my.json", &fsize);
+if(!data) {
+    fprintf(stderr, "Could not read file my.json: %s\n", VL_GetError());
+    return false;
+}
+
+vl_serialize_context ctx = GetDeserializeContext(SerializeType_JSON, .buffer = data, .buffer_size = fsize);
+
+VL_ObjectBegin(&ctx);
+  VL_AttributeName(&ctx, "somenullobj");
+  VL_SerializeNull(&ctx);
+
+  VL_AttributeName(&ctx, "string-values");
+  // if specified, a name will be used for XML array elements, else it will use the names 'element n'
+  VL_ArrayBegin(&ctx, "stringval");
+    char *s;
+    view v;
+    VL_SerializeOpString(&ctx, &s); // returns a strdup
+    VL_SerializeOpView(&ctx, &v); // returns a slice
+  VL_ArrayEnd(&ctx);
+VL_ObjectEnd(&ctx);
 ```
 
 ### Defines

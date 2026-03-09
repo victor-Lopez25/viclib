@@ -1,0 +1,10 @@
+viclib.h:
+[ ] Better float parsing
+
+vl_serialize.h:
+[ ] Test reading from file, make example do more stuff
+[ ] More deserialization formats
+
+general:
+[ ] Example builds for static/dynamic library
+[ ] Documentation

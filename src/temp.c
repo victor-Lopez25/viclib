@@ -25,7 +25,13 @@ int main(int argc, char **argv)
         "    \"hyper!\",\n"
         "    \"In the view\"\n"
         "  ]\n"
-        ""
+        "  \"floating-point-values\": [\n"
+        "    0.0,\n"
+        "    -0.0,\n"
+        "    134.576,\n"
+        "    null,\n"
+        "    null\n"
+        "  ]\n"
         "  \"another-object\": {\n"
         "    \"empty-array\": [],\n"
         "    \"empty-object\": {}\n"
@@ -78,16 +84,17 @@ int main(int argc, char **argv)
         Assert(VL_ArrayEnd(&ctx));
     }
 
-    /*
     VL_AttributeName(&ctx, "floating-point-values");
     VL_ArrayBegin(&ctx);
-        VL_SerializeFloat(&ctx, 0.0);
-        VL_SerializeFloat(&ctx, -0.0);
-        VL_SerializeFloat(&ctx, 134.576);
-        VL_SerializeFloat(&ctx, NAN);
-        VL_SerializeFloat(&ctx, INFINITY);
+        double val;
+        // NOTE: float parsing is pretty bad in viclib.h (specifically for exponent parsing)
+        //       will rework soon
+        Assert(VL_SerializeOpFloat(&ctx, &val));
+        Assert(VL_SerializeOpFloat(&ctx, &val));
+        Assert(VL_SerializeOpFloat(&ctx, &val));
+        Assert(VL_SerializeOpFloat(&ctx, &val));
+        Assert(VL_SerializeOpFloat(&ctx, &val));
     VL_ArrayEnd(&ctx);
-    */
 
     if(VL_AttributeName(&ctx, "another-object")) {
         Assert(VL_ObjectBegin(&ctx));

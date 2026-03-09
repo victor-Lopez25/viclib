@@ -4,6 +4,7 @@
 #define VL_SERIALIZE_H
 
 #include <math.h>
+#include <float.h> /* NAN */
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -125,7 +126,7 @@ struct vl_serialize_context {
     bool (*SerializeNull)(vl_serialize_context *ctx);
     bool (*SerializeOpBool)(vl_serialize_context *ctx, bool *val);
     bool (*SerializeOpInt)(vl_serialize_context *ctx, int64_t *val);
-    // TODO: SerializeOpFloat
+    bool (*SerializeOpFloat)(vl_serialize_context *ctx, double *val);
     bool (*SerializeOpString)(vl_serialize_context *ctx, char **val);
     bool (*SerializeOpView)(vl_serialize_context *ctx, view *val);
 
@@ -148,6 +149,7 @@ struct VL_ArrayBegin_opts {
 #define VL_SerializeNull(serialize_ctx) ((serialize_ctx)->SerializeNull(serialize_ctx))
 #define VL_SerializeOpBool(serialize_ctx, val) ((serialize_ctx)->SerializeOpBool(serialize_ctx, val))
 #define VL_SerializeOpInt(serialize_ctx, val) ((serialize_ctx)->SerializeOpInt(serialize_ctx, val))
+#define VL_SerializeOpFloat(serialize_ctx, val) ((serialize_ctx)->SerializeOpFloat(serialize_ctx, val))
 /* returns a strndup to VL_SerializeOpView in val */
 #define VL_SerializeOpString(serialize_ctx, val) ((serialize_ctx)->SerializeOpString(serialize_ctx, val))
 /* returns a slice to data in val */
@@ -668,6 +670,11 @@ static bool VL_SerializeOutputInt(vl_serialize_context *ctx, int64_t *val)
     VL_SerializeBool(ctx, *val);
     return true;
 }
+static bool VL_SerializeOutputFloat(vl_serialize_context *ctx, double *val)
+{
+    VL_SerializeFloat(ctx, *val);
+    return true;
+}
 static bool VL_SerializeOutputString(vl_serialize_context *ctx, char **val)
 {
     VL_SerializeString(ctx, *val);
@@ -692,6 +699,7 @@ SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext
     result.SerializeNull = VL_SerializeOutputNull;
     result.SerializeOpBool = VL_SerializeOutputBool;
     result.SerializeOpInt = VL_SerializeOutputInt;
+    result.SerializeOpFloat = VL_SerializeOutputFloat;
     result.SerializeOpString = VL_SerializeOutputString;
     result.SerializeOpView = VL_SerializeOutputView;
     switch(opt.type) {
@@ -932,6 +940,32 @@ static bool VL_SerializeExpectInt(vl_serialize_context *ctx, int64_t *val)
     }
 }
 
+static bool VL_SerializeExpectFloat(vl_serialize_context *ctx, double *val)
+{
+    view remaining;
+    if(!VL__DeserializeGetRemaining(ctx, &remaining)) return false;
+
+    if(ViewParseF64(remaining, val, &remaining)) {
+        remaining = ViewTrimLeft(remaining);
+        if((remaining.count > 0) && (remaining.items[0] == ',')) {
+            ViewChopLeft(&remaining, 1);
+        }
+        ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - remaining.count;
+        return true;
+    } else if(ViewChopStartsWith(&remaining, VIEW("null"))) {
+        *val = NAN;
+        if((remaining.count > 0) && (remaining.items[0] == ',')) {
+            ViewChopLeft(&remaining, 1);
+        }
+        ctx->as.deserialize.used_buffer_size = ctx->as.deserialize.current_chunk_size - remaining.count;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+//////////////////////////////////////////////
+
 static bool VL_SerializeJSON_ExpectView(vl_serialize_context *ctx, view *val)
 {
     view remaining;
@@ -968,6 +1002,8 @@ static bool VL_SerializeJSON_ExpectView(vl_serialize_context *ctx, view *val)
     return found_expected;
 }
 
+//////////////////////////////////////////////
+
 static bool VL_SerializeExpectString(vl_serialize_context *ctx, char **val)
 {
     view result;
@@ -1000,9 +1036,6 @@ SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeCon
     result.as.deserialize.file_chunk.Buffer = (uint8_t*)opt.buffer;
     result.as.deserialize.file_chunk.BufferSize = opt.buffer_size;
 
-    result.SerializeNull = VL_SerializeExpectNull;
-    result.SerializeOpBool = VL_SerializeExpectBool;
-    result.SerializeOpInt = VL_SerializeExpectInt;
     if(opt.filename) {
         result.as.deserialize.filename = opt.filename;
         uint32_t curr_read_size;
@@ -1011,6 +1044,11 @@ SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeCon
     } else {
         result.as.deserialize.current_chunk_size = opt.buffer_size;
     }
+
+    result.SerializeNull = VL_SerializeExpectNull;
+    result.SerializeOpBool = VL_SerializeExpectBool;
+    result.SerializeOpInt = VL_SerializeExpectInt;
+    result.SerializeOpFloat = VL_SerializeExpectFloat;
     result.SerializeOpString = VL_SerializeExpectString;
 
     switch(opt.type) {
