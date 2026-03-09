@@ -7,8 +7,12 @@
 #define GCC_OUT_DIRECTORY "gcc"
 #endif
 
-bool CompileLib(vl_cmd *cmd, vl_compile_ctx *ctx, const char *name)
+#define DEBUG_DIRECTORY "debug"
+#define RELEASE_DIRECTORY "release"
+
+bool CompileLib(vl_cmd *cmd, vl_compile_ctx *ctx, const char *name, bool debug)
 {
+    ctx->debug = debug;
     ctx->output = name;
     ctx->sourceFiles.count = 0;
     DaAppend(&ctx->sourceFiles, temp_sprintf("../src/%s.c", name));
@@ -16,7 +20,7 @@ bool CompileLib(vl_cmd *cmd, vl_compile_ctx *ctx, const char *name)
 #if OS_WINDOWS
     ctx->cc = CCompiler_MSVC;
     ctx->type = Compile_StaticLibrary;
-    ctx->outputDir = "msvc";
+    ctx->outputDir = temp_sprintf("%s/msvc", debug ? DEBUG_DIRECTORY : RELEASE_DIRECTORY);
     if(!VL_CCompile(cmd, ctx)) {
         fprintf(stderr, "Could not build %s.lib", name);
         return false;
@@ -29,7 +33,7 @@ bool CompileLib(vl_cmd *cmd, vl_compile_ctx *ctx, const char *name)
     }
 #endif
 
-    ctx->outputDir = GCC_OUT_DIRECTORY;
+    ctx->outputDir = temp_sprintf("%s/" GCC_OUT_DIRECTORY, debug ? DEBUG_DIRECTORY : RELEASE_DIRECTORY);
     ctx->cc = CCompiler_GCC;
     ctx->type = Compile_StaticLibrary;
     if(!VL_CCompile(cmd, ctx)) {
@@ -62,14 +66,22 @@ int main(int argc, char **argv)
         .warningsAsErrors = true,
     };
 
+    MkdirIfNotExist(DEBUG_DIRECTORY);
+    MkdirIfNotExist(RELEASE_DIRECTORY);
 #if defined(_WIN32)
-    MkdirIfNotExist("msvc");
+    MkdirIfNotExist(DEBUG_DIRECTORY   "/msvc");
+    MkdirIfNotExist(RELEASE_DIRECTORY "/msvc");
 #endif
-    MkdirIfNotExist(GCC_OUT_DIRECTORY);
+    MkdirIfNotExist(DEBUG_DIRECTORY "/" GCC_OUT_DIRECTORY);
+    MkdirIfNotExist(RELEASE_DIRECTORY "/" GCC_OUT_DIRECTORY);
 
-    CompileLib(&cmd, &ctx, "viclib");
-    CompileLib(&cmd, &ctx, "vl_build");
-    CompileLib(&cmd, &ctx, "vl_serialize");
+    CompileLib(&cmd, &ctx, "viclib", true);
+    CompileLib(&cmd, &ctx, "vl_build", true);
+    CompileLib(&cmd, &ctx, "vl_serialize", true);
+
+    CompileLib(&cmd, &ctx, "viclib", false);
+    CompileLib(&cmd, &ctx, "vl_build", false);
+    CompileLib(&cmd, &ctx, "vl_serialize", false);
 
     VL_Popd();
     return 0;
