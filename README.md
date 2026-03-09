@@ -24,12 +24,12 @@ Header-only library which does some basic stuff you might want in a lot of progr
 
 ### vl_serialize.h:
 Serialization library to serialize data into textual formats.
-Supported serialization formats:
+> Supported serialization formats
  - JSON
  - C99 Initializers
  - XML
  - TOML
-Supported deserialization formats:
+> Supported deserialization formats
  - JSON
 
 To download the header only libs:
@@ -102,6 +102,8 @@ int main(int argc, char **argv)
 ```
 
 ### vl_serialize.h:
+You may use `VL_SerializeOp*` for both serialization and deserialization, it gets chosen depending on the context
+
 ```c
 /* serialization example */
 
@@ -141,17 +143,18 @@ if(!data) {
 vl_serialize_context ctx = GetDeserializeContext(SerializeType_JSON, .buffer = data, .buffer_size = fsize);
 
 VL_ObjectBegin(&ctx);
-  VL_AttributeName(&ctx, "somenullobj");
-  VL_SerializeNull(&ctx);
+  if(VL_AttributeName(&ctx, "somenullobj")) {
+    VL_SerializeNull(&ctx); // this will expect 'null'
+  }
 
-  VL_AttributeName(&ctx, "string-values");
-  // if specified, a name will be used for XML array elements, else it will use the names 'element n'
-  VL_ArrayBegin(&ctx, "stringval");
-    char *s;
-    view v;
-    VL_SerializeOpString(&ctx, &s); // returns a strdup
-    VL_SerializeOpView(&ctx, &v); // returns a slice
-  VL_ArrayEnd(&ctx);
+  if(VL_AttributeName(&ctx, "string-values")) {
+    VL_ArrayBegin(&ctx, "stringval");
+      char *s;
+      view v;
+      VL_SerializeOpString(&ctx, &s); // returns a strdup
+      VL_SerializeOpView(&ctx, &v); // returns a slice
+    VL_ArrayEnd(&ctx);
+  }
 VL_ObjectEnd(&ctx);
 ```
 
