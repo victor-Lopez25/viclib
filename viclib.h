@@ -463,7 +463,6 @@ VIEWPROC bool ViewStartsWith(view v, view start);
 VIEWPROC bool ViewChopStartsWith(view *v, view start);
 /* finds the needle in the haystack. Returns pointer to where needle was found or null */
 VIEWPROC const char *ViewFind(view haystack, view needle);
-// If the needle gets found, chop the haystack until the first ocurrence of needle in haystack
 /* finds the needle in the haystack
  * Returns:
  * - If the needle was found
@@ -499,13 +498,38 @@ VIEWPROC view ViewChopByDelim(view *v, char delim);
  * - The part after the first newline in v
  * Checks for '\n' or "\r\n"
  **/
-VIEWPROC view ViewChopByLine(view *v); // '\n' or "\r\n"
-VIEWPROC view ViewChopByAnyDelim(view *v, view delims, char *delimiter); // checks for any character in Delims, stores found delimiter in Delimiter
-VIEWPROC view ViewChopByView(view *v, view delim); // full view is the delim
+VIEWPROC view ViewChopByLine(view *v);
+/* chops view v by any character in delims
+ * Returns:
+ * - The part before delim
+ * - The part after delim in v
+ * - The delim that was found from delims in delimiter (optional)
+ **/
+VIEWPROC view ViewChopByAnyDelim(view *v, view delims, char *delimiter);
+/* chops view v by delimiter delim
+ * Returns:
+ * - The part before delim
+ * - The part after delim in v
+ * The full view is the delimiter
+ **/
+VIEWPROC view ViewChopByView(view *v, view delim);
+/* chops n bytes from view v from the start
+ * Returns:
+ * - The starting n bytes of v as a view
+ * - The remaining view after chopping in v
+ **/
 VIEWPROC view ViewChopLeft(view *v, size_t n);
+/* chops n bytes from view v from the end
+ * Returns:
+ * - The starting (v->count - n) bytes of v as a view
+ * - The remaining view after chopping in v
+ **/
 VIEWPROC view ViewChopRight(view *v, size_t n);
+/* returns a left trimmed view v */
 VIEWPROC view ViewTrimLeft(view v);
+/* returns a right trimmed view v */
 VIEWPROC view ViewTrimRight(view v);
+/* returns a trimmed view v */
 VIEWPROC view ViewTrim(view v);
 
 #define ViewIterateLines(src, idxName, lineName) \
