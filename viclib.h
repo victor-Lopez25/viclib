@@ -485,8 +485,20 @@ VIEWPROC bool ViewFindCharacter(view v, char c, size_t *n);
  **/
 VIEWPROC bool ViewFindChopCharacter(view *v, char c, view *chopped);
 #define ViewEndWith ViewEndsWith /* in case of singular/plural annoyance */
+/* checks if 'v' ends with 'end' */
 VIEWPROC bool ViewEndsWith(view v, view end);
+/* chops view v by delimiter delim
+ * Returns:
+ * - The part before delim
+ * - The part after delim in v
+ **/
 VIEWPROC view ViewChopByDelim(view *v, char delim);
+/* chops view v by a line
+ * Returns:
+ * - The part before the first newline
+ * - The part after the first newline in v
+ * Checks for '\n' or "\r\n"
+ **/
 VIEWPROC view ViewChopByLine(view *v); // '\n' or "\r\n"
 VIEWPROC view ViewChopByAnyDelim(view *v, view delims, char *delimiter); // checks for any character in Delims, stores found delimiter in Delimiter
 VIEWPROC view ViewChopByView(view *v, view delim); // full view is the delim
