@@ -440,22 +440,49 @@ typedef struct {
 #endif
 
 #ifndef VL_INC_STRING_H
+/* returns the number of bytes of a string s until its first null ('\0') byte */
 size_t strlen(const char *s);
 #endif // VL_INC_STRING_H
 
+/* checks if the given character is a space */
 int is_space(int _c); // only checks ascii space characters
-VIEWPROC view ViewFromParts(const char *data, size_t count);
+
+/* returns a view pointing to the given data and with the given length */
+VIEWPROC view ViewFromParts(const char *data, size_t length);
+/* returns a view pointing to the given cstr and with the count given by strlen(cstr) */
 VIEWPROC view ViewFromCstr(const char *cstr);
-VIEWPROC view ViewSlice(view v, size_t start, size_t end); // won't include end -> [start, end)
-VIEWPROC int  ViewCompare(view a, view b); // result = A - B
+/* returns a slice of v from [start, end) */
+VIEWPROC view ViewSlice(view v, size_t start, size_t end);
+/* compares two views, same result as strcmp(a, b). Returns a - b */
+VIEWPROC int  ViewCompare(view a, view b);
+/* compares two views for equality */
 VIEWPROC bool ViewEq(view a, view b);
+/* checks if 'v' starts with 'start' */
 VIEWPROC bool ViewStartsWith(view v, view start);
-// Chops start from v when it gets found
+/* checks if 'v' starts with 'start' and removes 'start' from 'v' if it is true */
 VIEWPROC bool ViewChopStartsWith(view *v, view start);
-VIEWPROC const char *ViewFind(view haystack, view needle); // result = pointer to where the needle is in haystack or null
+/* finds the needle in the haystack. Returns pointer to where needle was found or null */
+VIEWPROC const char *ViewFind(view haystack, view needle);
 // If the needle gets found, chop the haystack until the first ocurrence of needle in haystack
+/* finds the needle in the haystack
+ * Returns:
+ * - If the needle was found
+ * - The part after the needle in haystack
+ * - The part before the needle in chopped (optional)
+ **/
 VIEWPROC bool ViewFindChop(view *haystack, view needle, view *chopped);
+/* finds a character c in a view v
+ * Returns:
+ * - If the character was found
+ * - The index of where the character was found in n (optional)
+ **/
 VIEWPROC bool ViewFindCharacter(view v, char c, size_t *n);
+/* finds a character c in a view v
+ * Returns:
+ * - If the character was found
+ * - The part after the character in v
+ * - The part before the character in chopped (optional)
+ **/
 VIEWPROC bool ViewFindChopCharacter(view *v, char c, view *chopped);
 #define ViewEndWith ViewEndsWith /* in case of singular/plural annoyance */
 VIEWPROC bool ViewEndsWith(view v, view end);
@@ -708,11 +735,11 @@ size_t strlen(const char *s)
 }
 #endif // strlen
 
-VIEWPROC view ViewFromParts(const char *data, size_t count)
+VIEWPROC view ViewFromParts(const char *data, size_t length)
 {
     view v;
     v.items = data;
-    v.count = count;
+    v.count = length;
     return v;
 }
 
