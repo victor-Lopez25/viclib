@@ -390,21 +390,34 @@ static inline uint32_t CountTrailingZerosSafeU32(uint32_t val);
 static inline uint32_t CountTrailingZerosSafeU64(uint64_t val);
 
 #if defined(VL_INC_STRING_H)
+/* copy len bytes from src to dst. Undefined behaviour if one contains the other */
 # define mem_copy_non_overlapping(dst, src, len) memcpy(dst, src, len)
+/* copy len bytes from src to dst */
 # define mem_copy(dst, src, len) memmove(dst, src, len)
+/* zero out len bytes from data */
 # define mem_zero(data, len) memset(data, 0, len)
+/* compare str1 and str2. result = str1 - str2 */
 # define mem_compare(str1, str2, count) memcmp(str1, str2, count)
 #elif defined(SDL_h_)
+/* copy len bytes from src to dst. Undefined behaviour if one contains the other */
 # define mem_copy_non_overlapping(dst, src, len) SDL_memcpy(dst, src, len)
+/* copy len bytes from src to dst */
 # define mem_copy(dst, src, len) SDL_memmove(dst, src, len)
+/* zero out len bytes from data */
 # define mem_zero(data, len) SDL_memset(data, 0, len)
+/* compare str1 and str2. result = str1 - str2 */
 # define mem_compare(str1, str2, count) SDL_memcmp(str1, str2, count)
 #else
+/* copy len bytes from src to dst. Undefined behaviour if one contains the other */
 VLIBPROC void mem_copy_non_overlapping(void *dst, const void *src, size_t len);
+/* copy len bytes from src to dst */
 VLIBPROC void mem_copy(void *dst, const void *src, size_t len);
+/* zero out len bytes from data */
 VLIBPROC void mem_zero(void *data, size_t len);
+/* compare str1 and str2. result = str1 - str2 */
 VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count);
 #endif
+/* zero out a struct (will fill in padding bytes too) */
 #define ZeroStruct(S) mem_zero(&(S), sizeof(S))
 
 ////////////////////////////////
@@ -1291,7 +1304,7 @@ VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
 
     for(;count-- > 0;) {
         if(*s1++ != *s2++)
-            return s1[-1] < s2[-1] ? -1 : 1;
+            return s1[-1] - s2[-1];
     }
     return 0;
 }
