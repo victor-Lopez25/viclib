@@ -36,14 +36,18 @@ bool CompileLib(vl_cmd *cmd, vl_compile_ctx *ctx, const char *name, bool debug)
     ctx->outputDir = temp_sprintf("%s/" GCC_OUT_DIRECTORY, debug ? DEBUG_DIRECTORY : RELEASE_DIRECTORY);
     ctx->cc = CCompiler_GCC;
     ctx->type = Compile_StaticLibrary;
+    ctx->extraCompilerFlags.count = 0;
     if(!VL_CCompile(cmd, ctx)) {
         fprintf(stderr, "Could not build "GCC_OUT_DIRECTORY"/lib%s.a", name);
         return false;
     }
 
     ctx->type = Compile_DynamicLibrary;
+#if !OS_WINDOWS
+    DaAppend(&ctx->extraCompilerFlags, "-fPIC");
+#endif
     if(!VL_CCompile(cmd, ctx)) {
-        fprintf(stderr, "Could not build "GCC_OUT_DIRECTORY"%s" VL_DLL_EXT, name);
+        fprintf(stderr, "Could not build "GCC_OUT_DIRECTORY"%s" VL_DLL_EXTENSION, name);
         return false;
     }
 
