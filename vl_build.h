@@ -53,6 +53,7 @@ typedef int vl_fd;
 #define VL_FREE free
 
 VLIBPROC vl_fd fd_OpenForRead(const char *path);
+/* '/dev/null' on windows will be automatically changed to 'NUL' and vice versa */
 VLIBPROC vl_fd fd_OpenForWrite(const char *path);
 VLIBPROC void fd_Close(vl_fd fd);
 
@@ -242,7 +243,7 @@ typedef struct {
     vl_procs *async;
     // Maximum processes in the .async list.
     size_t maxProcs;
-    // redirect to file or 'nul' for /dev/null or nul on windows
+    // redirect to file. 'NUL' and '/dev/null' will work on both windows and linux
     const char *stdinPath;
     const char *stdoutPath;
     const char *stderrPath;
@@ -254,6 +255,7 @@ typedef struct {
 VLIBPROC void VL_CmdRender(vl_cmd cmd, string_builder *render);
 
 VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt);
+/* '/dev/null' on windows will be automatically changed to 'NUL' and vice versa */
 #define CmdRun(Cmd, ...) CmdRun_Opt((vl_cmd_opts){.cmd = (Cmd), __VA_ARGS__})
 
 #define CmdAppend(cmd, ...) \
@@ -717,8 +719,8 @@ VLIBPROC vl_fd fd_OpenForRead(const char *path)
 
 VLIBPROC vl_fd fd_OpenForWrite(const char *path)
 {
-    // TODO: > /dev/null & > nul
 #ifndef _WIN32
+    if(ViewEq(ViewFromCstr(path), VIEW("NUL"))) path = "/dev/null";
     vl_fd result = open(path,
                      O_WRONLY | O_CREAT | O_TRUNC,
                      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -728,6 +730,8 @@ VLIBPROC vl_fd fd_OpenForWrite(const char *path)
     }
     return result;
 #else
+    if(ViewEq(ViewFromCstr(path), VIEW("/dev/null"))) path = "NUL";
+
     SECURITY_ATTRIBUTES saAttr = {0};
     saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = TRUE;
@@ -1313,7 +1317,6 @@ VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt)
         }
     }
 
-    // TODO: > /dev/null & > nul
     if(opt.stdinPath) {
         fdin = fd_OpenForRead(opt.stdinPath);
         if(fdin == VL_INVALID_FD) VL_ReturnDefer(false);
@@ -2436,10 +2439,7 @@ VLIBPROC void VL__GoRebuildUrself(int argc, char **argv, const char **src_paths,
         exit(1);
     }
 #ifdef VL_EXPERIMENTAL_DELETE_OLD
-    // TODO: this is an experimental behavior behind a compilation flag.
-    // Once it is confirmed that it does not cause much problems on both POSIX and Windows
-    // we may turn it on by default.
-    // NOTE: Pretty sure this won't work on windows
+    // NOTE: Must not delete on windows at least
     VL_DeleteFile(old_binary_path);
 #endif
 
