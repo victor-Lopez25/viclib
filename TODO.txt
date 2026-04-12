@@ -1,6 +1,12 @@
 viclib.h:
 [ ] Better float parsing
 
+vl_build.h:
+Add more Install_* functions to install other libraries
+[ ] Install_SDL3_image
+[ ] Install_SDL3_shadercross
+[ ] Install_FFmpeg
+
 vl_serialize.h:
 [ ] Test reading from file, make example do more stuff
 [ ] More deserialization formats
