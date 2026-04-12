@@ -12,8 +12,10 @@ Add more Install_* functions to install other libraries
 
 vl_serialize.h:
 [ ] Test reading from file, make example do more stuff
-[ ] More deserialization formats
+[ ] XML deserialization
+[ ] TOML deserialization
+C99 initializer deserialization doesn't make much sense - the compiler does this already
 
 general:
-[ ] Example builds for static/dynamic library
+[x] Example builds for static/dynamic library
 [ ] Documentation
