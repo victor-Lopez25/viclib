@@ -1,5 +1,5 @@
 viclib.h:
-[ ] ViewContains twoway memmem
+[ ] ViewFind twoway memmem
 [ ] Better float parsing
 
 vl_build.h:

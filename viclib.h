@@ -1582,7 +1582,7 @@ bool IsDebuggerPresent(void)
 
     buf[num_read] = '\0';
     char tracerPidString[] = "TracerPid:";
-    const char *tracer_pid_ptr = strstr(buf, tracerPidString); // TODO: use ViewContains (when it is better)
+    const char *tracer_pid_ptr = strstr(buf, tracerPidString); // TODO: use ViewFind (when it is better)
     if (!tracer_pid_ptr)
         return false;
     
