@@ -240,7 +240,7 @@ typedef struct {
     vl_cmd *cmd;
     // Run the command asynchronously appending its VL_Proc to the provided VL_Procs array
     vl_procs *async;
-    // Maximum processes in the .async list. 
+    // Maximum processes in the .async list.
     size_t maxProcs;
     // redirect to file or 'nul' for /dev/null or nul on windows
     const char *stdinPath;
@@ -377,13 +377,13 @@ struct compiler_info_opts {
 
 #if OS_WINDOWS
 # define VL_EXE_EXTENSION ".exe"
-# define VL_DLL_EXT ".dll"
+# define VL_DLL_EXTENSION ".dll"
 #else
 # define VL_EXE_EXTENSION
 # if __APPLE__
-#  define VL_DLL_EXT ".dynlib"
+#  define VL_DLL_EXTENSION ".dynlib"
 # else
-#  define VL_DLL_EXT ".so"
+#  define VL_DLL_EXTENSION ".so"
 # endif
 #endif
 
@@ -463,10 +463,10 @@ vl_compile_ctx ctx = {
     .debug = true,
     .warnings = true,
     .sourceFiles = VL_GetDaStrSlice("main.c"),
-    .outputPath = "example", // extension is added in VL_SetupCCompile()
+    .output = "example", // extension is added in VL_CCompile()
 };
 // default output is executable
-if(!VL_SetupCCompile(&cmd, &ctx)) {
+if(!VL_CCompile(&cmd, &ctx)) {
     fprintf(stderr, "Failed to compile main.c\n");
 }
 ```
@@ -474,6 +474,106 @@ if(!VL_SetupCCompile(&cmd, &ctx)) {
 VLIBPROC bool VL_CCompile_Opt(vl_compile_ctx *ctx, vl_cmd_opts opt);
 #define VL_CCompile(Cmd, ctx, ...) \
     VL_CCompile_Opt((ctx), (vl_cmd_opts){.cmd = (Cmd), __VA_ARGS__})
+
+typedef enum {
+    VL_INSTALL_MODE_RELEASE,
+    VL_INSTALL_MODE_RELEASE_WITH_DEBUG,
+    VL_INSTALL_MODE_DEBUG,
+} vl_install_mode;
+
+typedef struct {
+    vl_c_compiler cc;
+    vl_install_mode mode;
+    const char *installDir; // if not specified, won't do `cmake --install`
+    vl_file_paths libs;
+    vl_file_paths extraCompilerFlags;
+} vl_install_info;
+
+#ifndef VL_CMAKE_MSVC_GENERATOR
+#define VL_CMAKE_MSVC_GENERATOR "Visual Studio 17 2022"
+#endif
+
+#ifndef VL_CMAKE_MINGW_GENERATOR
+#define VL_CMAKE_MINGW_GENERATOR "MinGW Makefiles"
+#endif
+
+#ifndef VL_CMAKE_MSYS_GENERATOR
+#define VL_CMAKE_MSYS_GENERATOR "MSYS Makefiles"
+#endif
+
+#ifndef VL_CMAKE_UNIX_GENERATOR
+#define VL_CMAKE_UNIX_GENERATOR "Unix Makefiles"
+#endif
+
+#ifndef VL_CMAKE_GCC_GENERATOR
+#if OS_WINDOWS
+#define VL_CMAKE_GCC_GENERATOR VL_CMAKE_MINGW_GENERATOR
+#else
+#define VL_CMAKE_GCC_GENERATOR VL_CMAKE_UNIX_GENERATOR
+#endif
+#endif
+
+#ifndef VL_CMAKE_CLANG_GENERATOR
+#if OS_WINDOWS
+#define VL_CMAKE_CLANG_GENERATOR VL_CMAKE_MINGW_GENERATOR
+#else
+#define VL_CMAKE_CLANG_GENERATOR VL_CMAKE_UNIX_GENERATOR
+#endif
+#endif
+
+/* Dependencies:
+· git: used to clone SDL repo
+> On linux - make sure you have installed: https://wiki.libsdl.org/SDL3/README-linux#build-dependencies
+> On windows - cmake: used to build & install SDL
+
+> Directory structure made by this function:
+ dynamic_libs
+ include
+ └───SDL3
+ lib
+ vendor
+ ├───SDL
+ ├───SDL-build-clang
+ ├───SDL-build-gcc
+ └───SDL-build-msvc
+ *depending on what compiler was chosen it will use vendor/SDL-build-[clang|gcc|msvc]
+
+Usage:
+```c
+vl_cmd cmd = {0};
+vl_install_info sdlInfo = {
+    .mode = VL_INSTALL_MODE_RELEASE, // default to RELEASE
+    .cc = CCompiler_MSVC, // default to current compiler
+};
+if(!Install_SDL3(&cmd, &sdlInfo)) {
+    VL_Log(VL_ERROR, "Could not install SDL3");
+    return -1;
+}
+
+vl_compile_ctx ctx = {
+    .cc = CCompiler_MSVC,
+    .debug = true,
+    .warnings = true,
+    .sourceFiles = VL_GetDaStrSlice("main.c"),
+    .output = "example",
+    .includePaths = VL_GetDaStrSlice("include"),
+    .extraCompilerFlags = sdlInfo.extraCompilerFlags, // used for rpath
+    .libs = sdlInfo.libs,
+    .libPaths = VL_GetDaStrSlice("lib"),
+};
+if(!VL_CCompile(&cmd, &ctx)) {
+    VL_Log(VL_ERROR, "Failed to compile main.c");
+    return -1;
+}
+
+VL_InstallInfoFree(sdlInfo); // remember to free!
+```
+**/
+bool Install_SDL3(vl_cmd *cmd, vl_install_info *info);
+
+#define VL_InstallInfoFree(info) DaFree(info.libs); DaFree(info.extraCompilerFlags)
+
+///////////////////////////////////////////////////////////////
 
 #if OS_WINDOWS
 # if COMPILER_CL
@@ -853,7 +953,7 @@ VLIBPROC bool VL_CopyDirectoryRecursively_Opt(struct VL_CopyDirectoryRecursively
 VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, vl_file_paths *children)
 {
     bool result = true;
-    
+
     vl_file_paths children_tmp = {0};
     string_builder src_sb = {0};
 
@@ -1416,7 +1516,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
                         for(; oldnode; oldnode = oldnode->next) {
                             VL_BUILD_FILENAME_HASH(oldnode->file, hashval);
                             hashval &= newNodes.capacity - 1;
-                            
+
                             vl_filetime_node newPrev_ = {.next = &newNodes.items[hashval]};
                             vl_filetime_node *newPrev = &newPrev_;
                             if(newPrev->next->file.count != 0) {
@@ -1452,7 +1552,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
             result = true;
             break;
         }
-        
+
         //if(!node->exploredAllDependencies) {
             sb.count = 0;
             if(!SbReadEntireFile(vPath.items, &sb)) continue;
@@ -1527,7 +1627,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
                     }
                 }
                 if(!found) {
-                    /* Add it to already done search paths if it doesn't get found since it's most likely a 
+                    /* Add it to already done search paths if it doesn't get found since it's most likely a
                        standard libary include: e.g. math.h */
                     DaAppend(&searchPathsDone, filename);
                 }
@@ -1585,7 +1685,7 @@ VLIBPROC bool VL_Pushd(const char *path)
     AssertMsgAlways((VL__pushDirectoryBuffer.count+1) < VL_PUSHD_BUF_MAX, "Increase the size of the pushd buffer (VL_PUSHD_BUF_MAX)");
     bool ok = VL_SetCurrentDir(path);
     if(ok) {
-        VL__pushDirectoryBuffer.items[VL__pushDirectoryBuffer.count] = 
+        VL__pushDirectoryBuffer.items[VL__pushDirectoryBuffer.count] =
             temp_sprintf("%s/%s", VL__pushDirectoryBuffer.items[VL__pushDirectoryBuffer.count - 1], path);
         VL__pushDirectoryBuffer.count++;
     } else {
@@ -1839,8 +1939,11 @@ VLIBPROC bool VL_CCompile_Opt(vl_compile_ctx *ctx, vl_cmd_opts opt)
         .cc = ctx->cc,
     };
 
+    if(!ctx->outputDir) {
+        ctx->outputDir = ".";
+    }
     const char *output = temp_sprintf("%s/%s", ctx->outputDir, ctx->output);
-    AssertMsg(output || (ctx->type == Compile_Object), 
+    AssertMsg(output || (ctx->type == Compile_Object),
         "Output path must be specified unless compiling for object file output");
 
 #if OS_WINDOWS
@@ -1859,7 +1962,7 @@ VLIBPROC bool VL_CCompile_Opt(vl_compile_ctx *ctx, vl_cmd_opts opt)
             }
         }
     } else if(ctx->type == Compile_DynamicLibrary) {
-        output = temp_sprintf("%s" VL_DLL_EXT, output);
+        output = temp_sprintf("%s" VL_DLL_EXTENSION, output);
     } else if(ctx->type == Compile_StaticLibrary) {
         if(ctx->cc == CCompiler_MSVC) {
             output = temp_sprintf("%s.obj", output);
@@ -1929,10 +2032,12 @@ VLIBPROC bool VL_CCompile_Opt(vl_compile_ctx *ctx, vl_cmd_opts opt)
         VL_ccLib_Opt(info, ctx->libs.items[i]);
     }
 
+#if OS_WINDOWS
     if((ctx->cc == CCompiler_MSVC) && !opt.cmd->msvc_linkflags) {
         CmdAppend(opt.cmd, "/link");
         opt.cmd->msvc_linkflags = true;
     }
+#endif
 
     if(ctx->type == Compile_DynamicLibrary) {
         if(ctx->cc == CCompiler_MSVC) {
@@ -1959,7 +2064,7 @@ VLIBPROC bool VL_CCompile_Opt(vl_compile_ctx *ctx, vl_cmd_opts opt)
         if(ctx->cc == CCompiler_MSVC) {
             CmdAppend(opt.cmd, "lib", "-nologo", output);
         } else {
-            CmdAppend(opt.cmd, "ar", "rcs", 
+            CmdAppend(opt.cmd, "ar", "rcs",
                 temp_sprintf("%s/lib%s.a", ctx->outputDir, ctx->output), output);
         }
 
@@ -1970,6 +2075,196 @@ VLIBPROC bool VL_CCompile_Opt(vl_compile_ctx *ctx, vl_cmd_opts opt)
     }
 
     return ok;
+}
+
+bool Install_SDL3(vl_cmd *cmd, vl_install_info *info)
+{
+    bool result = true;
+
+    const char *modeStr;
+    const char *directoryOut;
+    const char *cmakeOutDir;
+    const char *cmakeGenerator;
+    const char *sdlLibName;
+#if OS_WINDOWS
+    const char *sdlDllName = "SDL3.dll";
+#else
+    (void)sdlLibName; (void)cmakeOutDir;
+    const char *sdlDllName = "libSDL3" VL_DLL_EXTENSION;
+#endif
+
+    if(info->cc == CCompiler_MSVC) {
+        directoryOut = "SDL-build-msvc";
+        cmakeGenerator = VL_CMAKE_MSVC_GENERATOR;
+        sdlLibName = "SDL3.lib";
+    } else if(info->cc == CCompiler_GCC) {
+        directoryOut = "SDL-build-gcc";
+        cmakeGenerator = VL_CMAKE_GCC_GENERATOR;
+        sdlLibName = "libSDL3.dll.a";
+    } else if(info->cc == CCompiler_Clang) {
+        directoryOut = "SDL-build-clang";
+        cmakeGenerator = VL_CMAKE_CLANG_GENERATOR;
+        sdlLibName = "libSDL3.dll.a";
+    } else {
+        VL_Log(VL_ERROR, "Unsupported compiler.\n"
+                         "Supported compilers: [CCompiler_MSVC, CCompiler_GCC, CCompiler_Clang]");
+        return false;
+    }
+
+    if(info->mode == VL_INSTALL_MODE_RELEASE) {
+        modeStr = "Release";
+    } else if(info->mode == VL_INSTALL_MODE_RELEASE_WITH_DEBUG) {
+        modeStr = "RelWithDebInfo";
+    } else if(info->mode == VL_INSTALL_MODE_DEBUG) {
+        modeStr = "Debug";
+    } else {
+        VL_Log(VL_ERROR, "Unknown install mode\n"
+                         "supported modes are: [VL_INSTALL_MODE_RELEASE, VL_INSTALL_MODE_RELEASE_WITH_DEBUG, VL_INSTALL_MODE_DEBUG]");
+        return false;
+    }
+
+    uint64_t tempMark = temp_save();
+#if OS_WINDOWS
+    bool skipped = VL_FileExists("dynamic_libs/SDL3.dll");
+#else
+    bool skipped = VL_FileExists("dynamic_libs/libSDL3.so");
+#endif
+    if(skipped) {
+        goto get_info;
+    }
+
+    MkdirIfNotExist("vendor");
+    VL_SetCurrentDir("vendor");
+
+    if(!VL_FileExists("SDL")) {
+        const char *clone_url = "https://github.com/libsdl-org/SDL.git";
+        CmdAppend(cmd, "git", "clone", clone_url, "--single-branch", "--depth=1");
+        if(!CmdRun(cmd)) {
+            VL_Log(VL_ERROR, "Could not clone SDL repo");
+            VL_ReturnDefer(false);
+        }
+    }
+
+    CmdAppend(cmd, "cmake", "-S", "SDL", "-B", directoryOut, "-G", cmakeGenerator);
+    if(info->cc == CCompiler_GCC) {
+        CmdAppend(cmd, "-DCMAKE_C_COMPILER=gcc", "-DCMAKE_CXX_COMPILER=g++");
+    } else if(info->cc == CCompiler_Clang) {
+        CmdAppend(cmd, "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++");
+    }
+    if(!CmdRun(cmd)) {
+        VL_Log(VL_ERROR, "Could not configure build");
+        VL_ReturnDefer(false);
+    }
+
+    CmdAppend(cmd, "cmake", "--build", directoryOut, "--config", modeStr);
+    if(!CmdRun(cmd)) {
+        VL_Log(VL_ERROR, "Could not build SDL");
+        VL_ReturnDefer(false);
+    }
+
+    if(info->installDir) {
+        CmdAppend(cmd, "cmake", "--install", directoryOut, "--config", modeStr, "--prefix", info->installDir);
+        if(!CmdRun(cmd)) {
+            VL_Log(VL_ERROR, "Could not intall SDL in '%s' directory", info->installDir);
+            VL_ReturnDefer(false);
+        }
+    }
+
+    if(!VL_FileExists("../include/SDL3")) {
+        MkdirIfNotExist("../include");
+        if(!VL_CopyDirectoryRecursively("SDL/include/SDL3", "../include/SDL3")) {
+            VL_Log(VL_ERROR, "Could not copy SDL3 include directory");
+            VL_ReturnDefer(false);
+        }
+    }
+
+    cmakeOutDir = temp_sprintf("%s/%s", directoryOut, modeStr);
+    const char *newDllPath = temp_sprintf("../dynamic_libs/%s", sdlDllName);
+    if(!VL_FileExists(newDllPath)) {
+#if OS_WINDOWS
+        if(info->cc == CCompiler_MSVC) {
+            
+            if(!VL_CopyDirectoryRecursively(cmakeOutDir, "../dynamic_libs", VL_DLL_EXTENSION)) {
+                VL_Log(VL_ERROR, "Could not copy SDL3 dlls");
+                VL_ReturnDefer(false);
+            }
+            if(info->mode != VL_INSTALL_MODE_RELEASE) {
+                if(!VL_CopyDirectoryRecursively(cmakeOutDir, "../dynamic_libs", ".pdb")) {
+                    VL_Log(VL_ERROR, "Could not copy SDL3 pdbs");
+                    VL_ReturnDefer(false);
+                }
+            }
+        } else {
+            if(!VL_CopyFile(temp_sprintf("%s/%s", directoryOut, sdlDllName), newDllPath)) {
+                VL_Log(VL_ERROR, "Could not copy SDL3 dll");
+                VL_ReturnDefer(false);
+            }
+        }
+#else
+        char buf[2048];
+        char *realPath = realpath(temp_sprintf("%s/%s", directoryOut, sdlDllName), buf);
+        if(!realPath) {
+            VL_Log(VL_ERROR, "Could not get real path from SDL" VL_DLL_EXTENSION " symlink");
+            VL_ReturnDefer(false);
+        }
+
+        MkdirIfNotExist("../dynamic_libs");
+        MkdirIfNotExist("../lib");
+
+        const char *unversionedLib = temp_sprintf("../lib/%s", sdlDllName);
+        const char *unversionedDll = newDllPath;
+
+        const char *versionedLib = temp_sprintf("../lib/%s.0", sdlDllName);
+        const char *versionedDll = temp_sprintf("../dynamic_libs/%s.0", sdlDllName);
+
+        if((symlink(realPath, unversionedLib) == -1) ||
+           (symlink(realPath, unversionedDll) == -1) ||
+           (symlink(realPath, versionedLib) == -1) ||
+           (symlink(realPath, versionedDll) == -1))
+        {
+            VL_Log(VL_ERROR, "Could not create symlink to SDL3" VL_DLL_EXTENSION ": %s", strerror(errno));
+            VL_ReturnDefer(false);
+        }
+#endif
+    }
+
+#if OS_WINDOWS
+    const char *sdlLibNewPath = temp_sprintf("../lib/%s", sdlLibName);
+    if(!VL_FileExists(sdlLibNewPath)) {
+        MkdirIfNotExist("../lib");
+        const char *oldPath;
+        if(info->cc == CCompiler_MSVC) {
+            oldPath = temp_sprintf("%s/%s", cmakeOutDir, sdlLibName);
+        } else {
+            oldPath = temp_sprintf("%s/%s", directoryOut, sdlLibName);
+        }
+        if(!VL_CopyFile(oldPath, sdlLibNewPath)) {
+            VL_Log(VL_ERROR, "Could not copy %s", sdlLibName);
+            VL_ReturnDefer(false);
+        }
+    }
+#endif
+
+get_info:
+    info->libs.items = 0;
+    info->libs.count = 0;
+    info->libs.capacity = 0;
+    info->extraCompilerFlags.items = 0;
+    info->extraCompilerFlags.count = 0;
+    info->extraCompilerFlags.capacity = 0;
+#if OS_WINDOWS
+    // NOTE: SDL3.lib or libSDL3.dll.a
+    DaAppend(&info->libs, (info->cc == CCompiler_MSVC) ? "SDL3" : "SDL3.dll");
+#else
+    DaAppend(&info->libs, "SDL3");
+    DaAppend(&info->extraCompilerFlags, "-Wl,-rpath,$ORIGIN/lib");
+#endif
+    if(skipped) return true;
+
+defer:
+    temp_rewind(tempMark);
+    VL_SetCurrentDir("..");
+    return result;
 }
 
 #if OS_WINDOWS
@@ -2111,7 +2406,7 @@ VLIBPROC void VL__GoRebuildUrself(int argc, char **argv, const char **src_paths,
 {
     Assert(argc > 0);
     // We don't want to recompile if a debugger is present, this would cause
-    // the debugger to get confused since it doesn't know that 
+    // the debugger to get confused since it doesn't know that
     // the new process is the one that it needs to debug
     if(IsDebuggerPresent()) return;
 
