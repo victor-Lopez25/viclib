@@ -20,6 +20,7 @@ Header-only library which does some basic stuff you might want in a lot of progr
  - Processes, in async too (cmd*)
  - Some filepath operations
  - helpers to use any c compiler (VL_cc*) (gcc, clang, msvc are supported)
+ - a function to build SDL3 (Install_SDL3)
  - NOB_GO_REBUILD_URSELF technology (tm)
 
 ### vl_serialize.h:
