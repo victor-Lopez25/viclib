@@ -1,7 +1,10 @@
 viclib.h:
+[ ] ViewContains twoway memmem
 [ ] Better float parsing
 
 vl_build.h:
+[ ] Optimize (use better data structure) VL_Needs_C_Rebuild
+[ ] Make VL_Needs_C_Rebuild more generic? e.g. have the check for finding includes be a function pointer
 Add more Install_* functions to install other libraries
 [ ] Install_SDL3_image
 [ ] Install_SDL3_shadercross
