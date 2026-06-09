@@ -150,12 +150,29 @@ SOFTWARE.
 #include <intrin.h>
 #endif
 
+typedef HANDLE vl_proc;
+# define VL_INVALID_PROC INVALID_HANDLE_VALUE
+typedef HANDLE vl_fd;
+# define VL_INVALID_FD INVALID_HANDLE_VALUE
+
+#define WIN32_MAX_FILE_READ_WRITE 1<<30
+#define VL_PATH_MAX MAX_PATH
+
 #elif OS_LINUX
 #include <time.h>
+#include <poll.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+
+typedef int vl_proc;
+# define VL_INVALID_PROC (-1)
+typedef int vl_fd;
+# define VL_INVALID_FD (-1)
+
+#define LINUX_MAX_FILE_READ_WRITE 1<<30
+#define VL_PATH_MAX PATH_MAX
 
 #elif OS_MAC // I think it works with the same includes as linux for now...?
 #include <time.h>
@@ -163,6 +180,14 @@ SOFTWARE.
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+
+typedef int vl_proc;
+# define VL_INVALID_PROC (-1)
+typedef int vl_fd;
+# define VL_INVALID_FD (-1)
+
+#define MAC_MAX_FILE_READ_WRITE 1<<30
+#define VL_PATH_MAX PATH_MAX
 
 #else
 #error Unsupported OS
@@ -582,7 +607,7 @@ typedef struct {
 } memory_arena;
 
 typedef struct {
-    memory_arena *Arena;
+    memory_arena *arena;
     size_t startMemOffset;
 } scratch_arena;
 
@@ -697,6 +722,24 @@ VLIBPROC bool VL_FileExists(const char *path);
 #if !OS_WINDOWS
 bool IsDebuggerPresent(void);
 #endif
+
+/* Open file for reading */
+VLIBPROC vl_fd VL_FopenForRead(const char *path);
+
+/* Open file for writing
+ * '/dev/null' on windows will be automatically changed to 'NUL' and vice versa */
+VLIBPROC vl_fd VL_FopenForWrite(const char *path);
+
+/* Close file handle */
+VLIBPROC void VL_FileClose(vl_fd fd);
+
+// TODO: Detect EOF
+/* Read maximum bytesSize from fd file, returns the amount of bytes read in bytesRead */
+VLIBPROC bool VL_FileRead(vl_fd fd, void *bytes, uint32_t bytesSize, uint32_t *bytesRead);
+
+// TODO: Errors on these
+VLIBPROC bool VL_Pipe(vl_fd *fdRead, vl_fd *fdWrite);
+VLIBPROC bool VL_PipeHasData(vl_fd read, bool *hasData);
 
 typedef enum {
     VL_FILE_INVALID = -1,
@@ -1484,7 +1527,7 @@ ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **Spli
 ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena)
 {
     scratch_arena scratch = {
-        .Arena = Arena,
+        .arena = Arena,
         .startMemOffset = Arena->used,
     };
     Arena->scratchCount += 1;
@@ -1494,7 +1537,7 @@ ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena)
 
 ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem)
 {
-    memory_arena *Arena = Scratch.Arena;
+    memory_arena *Arena = Scratch.arena;
     Assert(Arena->used >= Scratch.startMemOffset);
     if(ZeroMem) {
         mem_zero(Arena->base + Scratch.startMemOffset, Arena->used - Scratch.startMemOffset);
@@ -1560,6 +1603,218 @@ VLIBPROC bool VL_FileExists(const char *path)
     return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
 #else
     return access(path, F_OK) == 0;
+#endif
+}
+
+VLIBPROC vl_fd VL_FopenForRead(const char *path)
+{
+#if !OS_WINDOWS
+    vl_fd result = open(path, O_RDONLY);
+    if(result < 0) {
+        // VL_Log(VL_ERROR, "Could not open file %s: %s", path, strerror(errno));
+        return VL_INVALID_FD;
+    }
+    return result;
+#else
+    // https://docs.microsoft.com/en-us/windows/win32/fileio/opening-a-file-for-reading-or-writing
+    SECURITY_ATTRIBUTES saAttr = {0};
+    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+    saAttr.bInheritHandle = TRUE;
+
+    vl_fd result = CreateFile(
+                    path,
+                    GENERIC_READ,
+                    0,
+                    &saAttr,
+                    OPEN_EXISTING,
+                    FILE_ATTRIBUTE_READONLY,
+                    NULL);
+
+    if(result == INVALID_HANDLE_VALUE) {
+        // VL_Log(VL_ERROR, "Could not open file %s: %s", path, Win32_ErrorMessage(GetLastError()));
+        return VL_INVALID_FD;
+    }
+
+    return result;
+#endif // _WIN32
+}
+
+VLIBPROC vl_fd VL_FopenForWrite(const char *path)
+{
+#if !OS_WINDOWS
+    if(ViewEq(ViewFromCstr(path), VIEW("NUL"))) path = "/dev/null";
+    vl_fd result = open(path,
+                     O_WRONLY | O_CREAT | O_TRUNC,
+                     S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if(result < 0) {
+        // VL_Log(VL_ERROR, "Could not open file %s: %s", path, strerror(errno));
+        return VL_INVALID_FD;
+    }
+    return result;
+#else
+    if(ViewEq(ViewFromCstr(path), VIEW("/dev/null"))) path = "NUL";
+
+    SECURITY_ATTRIBUTES saAttr = {0};
+    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
+    saAttr.bInheritHandle = TRUE;
+
+    vl_fd result = CreateFile(
+                    path,                            // name of the write
+                    GENERIC_WRITE,                   // open for writing
+                    0,                               // do not share
+                    &saAttr,                         // default security
+                    CREATE_ALWAYS,                   // create always
+                    FILE_ATTRIBUTE_NORMAL,           // normal file
+                    NULL                             // no attr. template
+                );
+
+    if(result == INVALID_HANDLE_VALUE) {
+        // VL_Log(VL_ERROR, "Could not open file %s: %s", path, Win32_ErrorMessage(GetLastError()));
+        return VL_INVALID_FD;
+    }
+
+    return result;
+#endif // _WIN32
+}
+
+VLIBPROC void VL_FileClose(vl_fd fd)
+{
+#if OS_WINDOWS
+    CloseHandle(fd);
+#else
+    close(fd);
+#endif // _WIN32
+}
+
+VLIBPROC bool VL_FileRead(vl_fd fd, void *bytes, uint32_t bytesSize, uint32_t *bytesRead)
+{
+    if(!bytesRead || bytesSize == 0) {
+      return false;
+    }
+
+#if OS_WINDOWS
+    uint32_t toRead = min(bytesSize, WIN32_MAX_FILE_READ_WRITE);
+    long unsigned int readBytes;
+    if(ReadFile(fd, bytes, toRead, &readBytes, 0)) {
+        *bytesRead = (uint32_t)readBytes;
+        if(readBytes == 0) {
+          return false;
+        }
+    } else {
+        *bytesRead = 0;
+        return false;
+    }
+    return true;
+
+#elif OS_LINUX || OS_MAC
+    size_t toRead = min((size_t)bytesSize, LINUX_MAX_FILE_READ_WRITE);
+    ssize_t bytes = read(fd, bytes, toRead);
+    *bytesRead = (uint32_t)bytes;
+    return bytes > 0;
+#else
+    // unimplemented
+    return false;
+#endif
+}
+
+VLIBPROC bool VL_Pipe(vl_fd *fdRead, vl_fd *fdWrite)
+{
+    Assert(fdRead != 0);
+    Assert(fdWrite != 0);
+
+#if OS_WINDOWS
+    SECURITY_ATTRIBUTES securityAttrs = {
+        .nLength = sizeof(SECURITY_ATTRIBUTES),
+        .bInheritHandle = true,
+    };
+    return SUCCEEDED(CreatePipe(fdRead, fdWrite, &securityAttrs, 0));
+
+#elif OS_LINUX
+    vl_fd descs[2];
+    int status = pipe2(descs, O_CLOEXEC);
+    if(status == 0) {
+        *fdRead = descs[0];
+        *fdWrite = descs[1];
+    }
+    return status == 0;
+#else
+    // unimplemented...
+    return false;
+#endif
+}
+
+VLIBPROC bool VL_PipeHasData(vl_fd read, bool *hasData)
+{
+  if(!read || !hasData) {
+    return false;
+  }
+
+#if OS_WINDOWS
+  long unsigned int bytes;
+  if(!SUCCEEDED(PeekNamedPipe(read, 0, 0, 0, &bytes, 0))) {
+    *hasData = false;
+    return false;
+  }
+  *hasData = bytes > 0;
+  return true;
+#elif OS_LINUX
+  *hasData = false;
+
+  struct pollfd pollfd = {
+    .fd = read,
+    /* POLLIN = data to read, POLLHUP = closed connection */
+    .events = POLLIN | POLLHUP,
+  };
+  struct timespec timeoutTime = {
+    .tv_sec = 0,
+    .tv_nsec = 0,
+  };
+  int status = ppoll(&pollfd, 1, &timeoutTime, 0);
+  if(status == -1) {
+    // failed
+    return false;
+  }
+  if(status != 1) {
+    // Nothing available but didn't fail
+    return true;
+  }
+
+  if(pollfd.revents & POLLIN) {
+    *hasData = true;
+    return true;
+  } else if(pollfd.events & POLLHUP) {
+    // broken pipe
+    return false;
+  }
+  // unknown event
+  return false;
+#elif OS_MAC
+  struct pollfd pollfd = {
+    .fd = read,
+    /* POLLIN = data to read, POLLHUP = closed connection */
+    .events = POLLIN | POLLHUP,
+  };
+  int status = poll(&pollfd, 1, 0);
+  if(status == -1) {
+    // failed
+    return false;
+  }
+  if(status != 1) {
+    // Nothing available
+    return false;
+  }
+
+  if(pollfd.revents & POLLIN) {
+    return true;
+  } else if(pollfd.events & POLLHUP) {
+    // broken pipe
+    return false;
+  }
+  // unknown event
+  return false;
+#else
+  // unimplemented
+  return false;
 #endif
 }
 
@@ -1815,7 +2070,7 @@ bool ReadFileChunk(vl_file_chunk *Chunk, const char *File, u32 *ChunkSize)
         return false;
     }
 
-#elif OS_LINUX || OS_LINUX
+#elif OS_LINUX || OS_MAC
     if(!Chunk->didFirstIteration) {
         Chunk->didFirstIteration = true;
         Chunk->fd = open(File, O_RDONLY);

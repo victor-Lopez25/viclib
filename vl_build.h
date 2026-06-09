@@ -22,26 +22,13 @@
 # if !defined(_CRT_SECURE_NO_WARNINGS)
 #  define _CRT_SECURE_NO_WARNINGS
 # endif
-# define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #include <direct.h>
 #include <io.h>
-typedef HANDLE vl_proc;
-# define VL_INVALID_PROC INVALID_HANDLE_VALUE
-typedef HANDLE vl_fd;
-# define VL_INVALID_FD INVALID_HANDLE_VALUE
 #else
 
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <time.h>
-typedef int vl_proc;
-# define VL_INVALID_PROC (-1)
-typedef int vl_fd;
-# define VL_INVALID_FD (-1)
 #endif
 
 #define VL_INC_STDIO_H
@@ -51,11 +38,6 @@ typedef int vl_fd;
 
 #define VL_REALLOC realloc
 #define VL_FREE free
-
-VLIBPROC vl_fd fd_OpenForRead(const char *path);
-/* '/dev/null' on windows will be automatically changed to 'NUL' and vice versa */
-VLIBPROC vl_fd fd_OpenForWrite(const char *path);
-VLIBPROC void fd_Close(vl_fd fd);
 
 #if defined(__GNUC__) || defined(__clang__)
 //   https://gcc.gnu.org/onlinedocs/gcc-4.7.2/gcc/Function-Attributes.html
@@ -269,6 +251,8 @@ VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt);
 #define CmdFree(cmd) VL_FREE(cmd.items)
 
 VLIBPROC int VL_GetCountProcs(void);
+
+VLIBPROC vl_proc VL_CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd *fderr, bool render);
 
 VLIBPROC char *temp_sprintf(const char *fmt, ...) VL_PRINTF_FORMAT(1, 2);
 
@@ -626,8 +610,6 @@ VLIBPROC char *Win32_ErrorMessage(DWORD err);
 
 #ifdef VL_BUILD_IMPLEMENTATION
 
-static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd *fderr);
-
 vl_log_level VL_MinimalLogLevel = VL_ECHO;
 
 #if !OS_WINDOWS
@@ -683,86 +665,6 @@ VLIBPROC char *Win32_ErrorMessage(DWORD err)
     return win32ErrMsg;
 }
 #endif
-
-VLIBPROC vl_fd fd_OpenForRead(const char *path)
-{
-#ifndef _WIN32
-    vl_fd result = open(path, O_RDONLY);
-    if(result < 0) {
-        VL_Log(VL_ERROR, "Could not open file %s: %s", path, strerror(errno));
-        return VL_INVALID_FD;
-    }
-    return result;
-#else
-    // https://docs.microsoft.com/en-us/windows/win32/fileio/opening-a-file-for-reading-or-writing
-    SECURITY_ATTRIBUTES saAttr = {0};
-    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
-    saAttr.bInheritHandle = TRUE;
-
-    vl_fd result = CreateFile(
-                    path,
-                    GENERIC_READ,
-                    0,
-                    &saAttr,
-                    OPEN_EXISTING,
-                    FILE_ATTRIBUTE_READONLY,
-                    NULL);
-
-    if(result == INVALID_HANDLE_VALUE) {
-        VL_Log(VL_ERROR, "Could not open file %s: %s", path, Win32_ErrorMessage(GetLastError()));
-        return VL_INVALID_FD;
-    }
-
-    return result;
-#endif // _WIN32
-}
-
-VLIBPROC vl_fd fd_OpenForWrite(const char *path)
-{
-#ifndef _WIN32
-    if(ViewEq(ViewFromCstr(path), VIEW("NUL"))) path = "/dev/null";
-    vl_fd result = open(path,
-                     O_WRONLY | O_CREAT | O_TRUNC,
-                     S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if(result < 0) {
-        VL_Log(VL_ERROR, "Could not open file %s: %s", path, strerror(errno));
-        return VL_INVALID_FD;
-    }
-    return result;
-#else
-    if(ViewEq(ViewFromCstr(path), VIEW("/dev/null"))) path = "NUL";
-
-    SECURITY_ATTRIBUTES saAttr = {0};
-    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
-    saAttr.bInheritHandle = TRUE;
-
-    vl_fd result = CreateFile(
-                    path,                            // name of the write
-                    GENERIC_WRITE,                   // open for writing
-                    0,                               // do not share
-                    &saAttr,                         // default security
-                    CREATE_ALWAYS,                   // create always
-                    FILE_ATTRIBUTE_NORMAL,           // normal file
-                    NULL                             // no attr. template
-                );
-
-    if(result == INVALID_HANDLE_VALUE) {
-        VL_Log(VL_ERROR, "Could not open file %s: %s", path, Win32_ErrorMessage(GetLastError()));
-        return VL_INVALID_FD;
-    }
-
-    return result;
-#endif // _WIN32
-}
-
-VLIBPROC void fd_Close(vl_fd fd)
-{
-#ifdef _WIN32
-    CloseHandle(fd);
-#else
-    close(fd);
-#endif // _WIN32
-}
 
 VLIBPROC void VL_Log(vl_log_level lvl, const char *fmt, ...)
 {
@@ -1318,21 +1220,21 @@ VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt)
     }
 
     if(opt.stdinPath) {
-        fdin = fd_OpenForRead(opt.stdinPath);
+        fdin = VL_FopenForRead(opt.stdinPath);
         if(fdin == VL_INVALID_FD) VL_ReturnDefer(false);
         optFdin = &fdin;
     }
     if(opt.stdoutPath) {
-        fdout = fd_OpenForWrite(opt.stdoutPath);
+        fdout = VL_FopenForWrite(opt.stdoutPath);
         if(fdout == VL_INVALID_FD) VL_ReturnDefer(false);
         optFdout = &fdout;
     }
     if(opt.stderrPath) {
-        fderr = fd_OpenForWrite(opt.stderrPath);
+        fderr = VL_FopenForWrite(opt.stderrPath);
         if(fderr == VL_INVALID_FD) VL_ReturnDefer(false);
         optFderr = &fderr;
     }
-    proc = VL__CmdStartProcess(*opt.cmd, optFdin, optFdout, optFderr);
+    proc = VL_CmdStartProcess(*opt.cmd, optFdin, optFdout, optFderr, true);
 
     if(opt.async) {
         if(proc == VL_INVALID_PROC) VL_ReturnDefer(false);
@@ -1342,9 +1244,9 @@ VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt)
     }
 
 defer:
-    if(optFdin)  fd_Close(*optFdin);
-    if(optFdout) fd_Close(*optFdout);
-    if(optFderr) fd_Close(*optFderr);
+    if(optFdin)  VL_FileClose(*optFdin);
+    if(optFdout) VL_FileClose(*optFdout);
+    if(optFderr) VL_FileClose(*optFderr);
     opt.cmd->count = 0;
 #if OS_WINDOWS
     opt.cmd->msvc_linkflags = 0;
@@ -1443,206 +1345,152 @@ VLIBPROC int VL_NeedsRebuild_Impl(const char *output_path, const char **input_pa
     return 0;
 }
 
-vl_needrebuild_context VL_needsRebuildContext = {0};
-
 VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input_paths, size_t input_paths_count)
 {
-    vl_needrebuild_context *ctx = &VL_needsRebuildContext;
-    Assert(ctx->Arena != &ArenaTemp);
-    if(ctx->table.nodes.items == 0) {
-        ctx->table.nodes.capacity = VL_BUILD_FILETIME_TABLE_SIZE;
-        ctx->table.nodes.items = (vl_filetime_node*)VL_REALLOC(0, ctx->table.nodes.capacity*sizeof(vl_filetime_node));
-        mem_zero(ctx->table.nodes.items, ctx->table.nodes.capacity*sizeof(vl_filetime_node));
-        ctx->table.nodes.count = 0;
+    vl_cmd cmd = {0};
+#if COMPILER_GCC
+    CmdAppend(&cmd, "gcc", "-MM");
+#elif COMPILER_CLANG
+    CmdAppend(&cmd, "clang", "-MM");
+#elif COMPILER_CL
+    CmdAppend(&cmd, "cl", "/showIncludes", "/Zs", "/nologo");
+#else
+    // unimplemented
+    return -1;
+#endif
+    DaAppendMany(&cmd, input_paths, input_paths_count);
+
+    int needsRebuildSimple = VL_NeedsRebuild_Impl(output_path, input_paths, input_paths_count);
+    if(needsRebuildSimple != 0) {
+      return needsRebuildSimple;
     }
-    Assert((ctx->table.nodes.capacity & (ctx->table.nodes.capacity-1)) == 0); /* capacity must be power of 2 */
 
-    u64 outputFileTime;
-    if(!GetLastWriteTime(output_path, &outputFileTime)) return 1;
+    int result = 0;
 
-    bool result = false;
-    string_builder sb = {0};
-    vl_file_paths searchPaths = {0};
-    vl_file_paths searchPathsDone = {0};
+    vl_fd read;
+    vl_fd write;
+    bool ok = VL_Pipe(&read, &write);
+    if(!ok) {
+        VL_Log(VL_ERROR, "Could not create pipe for VL_Needs_C_Rebuild");
+        return -1;
+    }
 
-    size_t startTempMark = temp_save();
+    vl_proc proc = VL_CmdStartProcess(cmd, 0, &write, 0, false);
+    VL_FileClose(write);
 
-    u32 hashval;
-    DaAppendMany(&searchPaths, input_paths, input_paths_count);
-    // TODO: Need some way to know if I explored all dependencies of a specific file
-    while(searchPaths.count > 0) {
-        char *currPath = (char*)searchPaths.items[0];
-        view vPath = ViewFromCstr(currPath);
+    char *abuf = (char*)ArenaTemp.base + ArenaTemp.used;
 
-        DaAppend(&searchPathsDone, currPath);
-        // unordered remove in each iteration
-        searchPaths.count--;
-        searchPaths.items[0] = searchPaths.items[searchPaths.count];
+    size_t iniMark = temp_save();
 
-        VL_BUILD_FILENAME_HASH(vPath, hashval);
-        hashval &= ctx->table.nodes.capacity - 1;
-        vl_filetime_node *node = &ctx->table.nodes.items[hashval];
-        vl_filetime_node prev_ = {.next = node};
-        vl_filetime_node *prev = &prev_;
-        while(prev->next && !ViewEq(prev->next->file, vPath)) {
-            prev = prev->next;
-        }
-
-        if(!prev->next) {
-            u64 inputFileTime;
-            if(!VL_GetLastWriteTime(currPath, &inputFileTime)) return -1;
-
-            if(ctx->freelist) {
-                prev->next = ctx->freelist;
-                ctx->freelist = ctx->freelist->next;
-            } else if(ctx->Arena) {
-                prev->next = PushStruct(ctx->Arena, vl_filetime_node);
-            } else {
-                prev->next = (vl_filetime_node*)VL_REALLOC(0, sizeof(vl_filetime_node));
-            }
-            prev->next->file = vPath;
-            prev->next->time = inputFileTime;
-            prev->next->next = 0;
-            //prev->next->exploredAllDependencies = false;
-
-            ctx->table.countTimes++;
-            if(ctx->table.countTimes > (ctx->table.nodes.capacity >> 1)) {
-                /* Resize the hash table, this is pretty slow... */
-                vl_filetime_nodelist newNodes;
-                newNodes.capacity = ctx->table.nodes.capacity << 1,
-                newNodes.items = VL_REALLOC(0, newNodes.capacity*sizeof(vl_filetime_node));
-                newNodes.count = 0;
-
-                for(size_t i = 0; i < ctx->table.nodes.count; i++) {
-                    if(ctx->table.nodes.items[i].file.count != 0) {
-                        vl_filetime_node *oldnode = &ctx->table.nodes.items[i];
-                        for(; oldnode; oldnode = oldnode->next) {
-                            VL_BUILD_FILENAME_HASH(oldnode->file, hashval);
-                            hashval &= newNodes.capacity - 1;
-
-                            vl_filetime_node newPrev_ = {.next = &newNodes.items[hashval]};
-                            vl_filetime_node *newPrev = &newPrev_;
-                            if(newPrev->next->file.count != 0) {
-                                while(newPrev->next) prev = prev->next;
-                                if(ctx->freelist) {
-                                    prev->next = ctx->freelist;
-                                    ctx->freelist = ctx->freelist->next;
-                                } else if(ctx->Arena) {
-                                    prev->next = PushStruct(ctx->Arena, vl_filetime_node);
-                                } else {
-                                    prev->next = (vl_filetime_node*)VL_REALLOC(0, sizeof(vl_filetime_node));
-                                }
-                            } else {
-                                newNodes.count++;
-                            }
-                            prev->next->file = oldnode->file;
-                            prev->next->time = oldnode->time;
-                            prev->next->next = 0;
-
-                            vl_filetime_node *nextFree = ctx->freelist;
-                            ctx->freelist = oldnode;
-                            ctx->freelist->next = nextFree;
-                        }
-                    }
-                }
-
-                VL_FREE(ctx->table.nodes.items);
-                ctx->table.nodes = newNodes;
-            }
-        }
-
-        if(prev->next->time > outputFileTime) {
-            result = true;
+    char buf[2048];
+    for(;;) {
+        uint32_t bytesRead;
+        if(!VL_FileRead(read, buf, (uint32_t)sizeof(buf), &bytesRead)) {
             break;
         }
 
-        //if(!node->exploredAllDependencies) {
-            sb.count = 0;
-            if(!SbReadEntireFile(vPath.items, &sb)) continue;
-
-            SbAppendNull(&sb);
-
-            // TODO: Check if smarter parsing, where we don't try to do anything when it's commented out (in a multiline comment) is any better/quicker (I don't think so)
-            char *ptr = sb.items;
-            while(ptr) {
-                // TODO: Use viclib's view parsing for this when ViewContains is redone
-                ptr = strstr(ptr, "\n#include");
-                if(!ptr) break;
-                ptr = strpbrk(ptr + strlen("\n#include"), "\"<"); /* find first '<' or '"' character */
-                /* very unlikely, but there is the case where the include is a macro constant. See how viclib.h is included in vl_build.h */
-                if(!ptr) continue;
-
-                char closeChar = *ptr == '"' ? '"' : '>';
-                char *filename = ptr + 1;
-                ptr = strchr(filename, closeChar);
-                if(!ptr) break;
-                filename = temp_strndup(filename, ptr - filename);
-
-                /* 1. Check in same directory as this file (the one with the #include)
-                 * 2. Check in the same directory as currPath
-                 * 3. Check in ctx->includePaths[i]
-                 */
-                bool found = false;
-                LinearSearch(&searchPathsDone, filename, !strcmp);
-                if(found) continue;
-
-                if(VL_FileExists(filename)) {
-                    // Found in 1.
-                    LinearSearch(&searchPaths, filename, !strcmp);
-                    if(!found) DaAppend(&searchPaths, filename);
-                    continue;
-                }
-
-                char *contiguousPath = currPath;
-                size_t tempMark = temp_save();
-                char *lastSlash = contiguousPath + strlen(contiguousPath) - 1;
-                while(lastSlash > contiguousPath && *lastSlash != '/') lastSlash--;
-                contiguousPath =
-                    temp_sprintf("%.*s/%s", (int)(lastSlash - contiguousPath), contiguousPath, filename);
-                LinearSearch(&searchPathsDone, contiguousPath, !strcmp);
-                if(found) continue;
-
-                if(VL_FileExists(contiguousPath)) {
-                    // Found in 2.
-                    LinearSearch(&searchPaths, contiguousPath, !strcmp);
-                    if(!found) DaAppend(&searchPaths, contiguousPath);
-                    continue;
-                }
-
-                if(ctx->includePaths) {
-                    for(size_t incIdx = 0; incIdx < ctx->includePaths->count; incIdx++) {
-                        char *path = temp_sprintf("%s/%s", ctx->includePaths->items[incIdx], filename);
-                        if(VL_FileExists(path)) {
-                            LinearSearch(&searchPathsDone, path, !strcmp);
-                            temp_rewind(tempMark);
-                            if(found) {
-                                break;
-                            } else {
-                                // Found in 3.
-                                path = temp_sprintf("%s/%s", ctx->includePaths->items[incIdx], filename);
-                                LinearSearch(&searchPaths, path, !strcmp);
-                                if(!found) DaAppend(&searchPaths, path);
-                                else temp_rewind(tempMark);
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if(!found) {
-                    /* Add it to already done search paths if it doesn't get found since it's most likely a
-                       standard libary include: e.g. math.h */
-                    DaAppend(&searchPathsDone, filename);
-                }
-            }
-        //}
+        if(ArenaTemp.used + (size_t)bytesRead >= ArenaTemp.size) {
+            VL_Log(VL_ERROR, "No memory left in VL_Needs_C_Rebuild");
+            VL_ReturnDefer(-1);
+        }
+        mem_copy_non_overlapping(ArenaTemp.base + ArenaTemp.used, buf, bytesRead);
+        ArenaTemp.used += bytesRead;
     }
 
-    temp_rewind(startTempMark);
+    size_t callMemSize = ArenaTemp.used - iniMark;
+    view *includes;
+    size_t countIncludes = 0;
 
-    DaFree(searchPathsDone);
-    DaFree(searchPaths);
-    DaFree(sb);
+#if COMPILER_GCC || COMPILER_CLANG
+    // NOTE: Full format:
+    // file.o: file.c <include list>
+    view data = ViewTrimRight(ViewFromParts(abuf, callMemSize));
+    // NOTE: "file.o: "
+    ViewChopByView(&data, VIEW(": "));
+    // NOTE: "file.c"
+    ViewChopByDelim(&data, ' ');
+
+    // NOTE: Trim before to remove unnecessary data from arena
+    mem_copy(abuf, data.items, data.count);
+    data.items = abuf;
+    ArenaTemp.used = data.count;
+
+    includes = (view*)(ArenaTemp.base + ArenaTemp.used + ArenaGetAlignmentOffset(&ArenaTemp, sizeof(view)));
+
+    while(data.count > 0) {
+        view inc = ViewChopByDelim(&data, ' ');
+        if(inc.items[0] == '\\') {
+            /* Skip '\n' and ' ' after '\n' */
+            data.items += 2;
+            data.count -= 2;
+            continue;
+        }
+
+        if(ArenaTemp.used + sizeof(view) >= ArenaTemp.size) {
+            VL_Log(VL_ERROR, "No memory left in VL_Needs_C_Rebuild");
+            VL_ReturnDefer(-1);
+        }
+        mem_copy_non_overlapping(includes + countIncludes, &inc, sizeof(view));
+        ArenaTemp.used += sizeof(view);
+
+        countIncludes++;
+    }
+
+#elif COMPILER_CL
+    view data = ViewFromParts(abuf, callMemSize);
+    //printf(VIEW_FMT, VIEW_ARG(data));
+
+    includes = (view*)(ArenaTemp.base + ArenaTemp.used + ArenaGetAlignmentOffset(&ArenaTemp, sizeof(view)));
+
+    ViewIterateLines(&data, lineIdx, line) {
+        if(ViewChopStartsWith(&line, VIEW("Note: including file: "))) {
+            if(ArenaTemp.used + sizeof(view) >= ArenaTemp.size) {
+                VL_Log(VL_ERROR, "No memory left in VL_Needs_C_Rebuild");
+                VL_ReturnDefer(-1);
+            }
+            // Remove spaces from the left showing include depth
+            line = ViewTrimLeft(line);
+            mem_copy_non_overlapping(includes + countIncludes, &line, sizeof(view));
+            ArenaTemp.used += sizeof(view);
+
+            countIncludes++;
+        } else {
+            // NOTE: This is a source filename, maybe it's useful to handle this later
+        }
+    }
+#endif
+
+    uint64_t outputFileTime;
+    if(!GetLastWriteTime(output_path, &outputFileTime)) return 1;
+
+    char path[VL_PATH_MAX+1];
+    for(size_t i = 0; i < countIncludes; i++) {
+        view inc = includes[i];
+        if(inc.count > VL_PATH_MAX) {
+            VL_Log(VL_WARNING, "Ignoring file '"VIEW_FMT"' because its path is longer than max path",
+                   VIEW_ARG(inc));
+            continue;
+        }
+
+        mem_copy_non_overlapping(path, inc.items, inc.count);
+        path[inc.count] = '\0';
+
+        u64 inputFileTime;
+        if(!VL_GetLastWriteTime(path, &inputFileTime)) VL_ReturnDefer(-1);
+
+        // NOTE: if even a single input_path is fresher than output_path that's 100% rebuild
+        if(inputFileTime > outputFileTime) VL_ReturnDefer(1);
+    }
+
+defer:
+    if(!VL_ProcWait(proc)) {
+        VL_Log(VL_ERROR, "Could not wait for process to get includes");
+        result = -1;
+    }
+
+    VL_FileClose(read);
+
+    temp_rewind(iniMark);
 
     return result;
 }
@@ -2312,7 +2160,7 @@ static void Win32_CmdQuote(vl_cmd cmd, string_builder *quoted)
 }
 #endif
 
-static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd *fderr)
+VLIBPROC vl_proc VL_CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd *fderr, bool render)
 {
     if(cmd.count < 1) {
         VL_Log(VL_ERROR, "Could not run empty command");
@@ -2323,11 +2171,13 @@ static vl_proc VL__CmdStartProcess(vl_cmd cmd, vl_fd *fdin, vl_fd *fdout, vl_fd 
 #endif
 
     string_builder sb = {0};
-    VL_CmdRender(cmd, &sb);
-    SbAppendNull(&sb);
-    VL_Log(VL_INFO, "CMD: %s", sb.items);
-    SbFree(sb);
-    memset(&sb, 0, sizeof(sb));
+    if(render) {
+        VL_CmdRender(cmd, &sb);
+        SbAppendNull(&sb);
+        VL_Log(VL_INFO, "CMD: %s", sb.items);
+        SbFree(sb);
+        memset(&sb, 0, sizeof(sb));
+    }
 
 #if OS_WINDOWS
     // https://docs.microsoft.com/en-us/windows/win32/procthread/creating-a-child-process-with-redirected-input-and-output
