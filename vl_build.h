@@ -1319,9 +1319,9 @@ VLIBPROC bool VL_GetLastWriteTime(const char *file, u64 *writeTime)
     bool result = true;
     if(!GetLastWriteTime(file, writeTime)) {
 #ifdef _WIN32
-        VL_Log(VL_ERROR, "Could not get filetime of %s: %s", file, Win32_ErrorMessage(GetLastError()));
+        VL_Log(VL_ERROR, "Could not get filetime of '%s': %s", file, Win32_ErrorMessage(GetLastError()));
 #else
-        VL_Log(VL_ERROR, "Could not get filetime of %s: %s", file, strerror(errno));
+        VL_Log(VL_ERROR, "Could not get filetime of '%s': %s", file, strerror(errno));
 #endif
         result = false;
     }
@@ -1403,37 +1403,37 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
 
 #if COMPILER_GCC || COMPILER_CLANG
     // NOTE: Full format:
-    // file.o: file.c <include list>
+    // file1.o: file1.c <include list>
+    // file2.o: file2.c <include list>
+    // etc.
     view data = ViewTrimRight(ViewFromParts(abuf, callMemSize));
-    // NOTE: "file.o: "
-    ViewChopByView(&data, VIEW(": "));
-    // NOTE: "file.c"
-    ViewChopByDelim(&data, ' ');
-
-    // NOTE: Trim before to remove unnecessary data from arena
-    mem_copy(abuf, data.items, data.count);
-    data.items = abuf;
-    ArenaTemp.used = data.count;
 
     includes = (view*)(ArenaTemp.base + ArenaTemp.used + ArenaGetAlignmentOffset(&ArenaTemp, sizeof(view)));
 
-    while(data.count > 0) {
-        view inc = ViewChopByDelim(&data, ' ');
-        if(inc.items[0] == '\\') {
-            /* Skip '\n' and ' ' after '\n' */
-            data.items += 2;
-            data.count -= 2;
-            continue;
-        }
+    ViewIterateLines(&data, lineIdx, line) {
+        // NOTE: "file.o: "
+        ViewChopByView(&line, VIEW(": "));
+        // NOTE: "file.c"
+        ViewChopByDelim(&line, ' ');
 
-        if(ArenaTemp.used + sizeof(view) >= ArenaTemp.size) {
-            VL_Log(VL_ERROR, "No memory left in VL_Needs_C_Rebuild");
-            VL_ReturnDefer(-1);
-        }
-        mem_copy_non_overlapping(includes + countIncludes, &inc, sizeof(view));
-        ArenaTemp.used += sizeof(view);
+        while(line.count > 0) {
+            view inc = ViewChopByDelim(&line, ' ');
+            if(inc.items[0] == '\\') {
+                /* Skip '\n' and ' ' after '\n' */
+                line.items += 2;
+                line.count -= 2;
+                continue;
+            }
 
-        countIncludes++;
+            if(ArenaTemp.used + sizeof(view) >= ArenaTemp.size) {
+                VL_Log(VL_ERROR, "No memory left in VL_Needs_C_Rebuild");
+                VL_ReturnDefer(-1);
+            }
+            mem_copy_non_overlapping(includes + countIncludes, &inc, sizeof(view));
+            ArenaTemp.used += sizeof(view);
+
+            countIncludes++;
+        }
     }
 
 #elif COMPILER_CL
