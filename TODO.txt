@@ -1,6 +1,7 @@
 viclib.h:
 [ ] ViewFind twoway memmem
 [ ] Better float parsing
+[ ] Check Introsort, might be wrong somewhere. I could be wrong, I used it long ago last time
 
 vl_build.h:
 [x] Optimize VL_Needs_C_Rebuild
