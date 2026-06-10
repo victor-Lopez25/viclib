@@ -327,10 +327,6 @@ extern vl_needrebuild_context VL_needsRebuildContext;
     } while(0)
 #endif // VL_BUILD_FILENAME_HASH
 
-// Checks the filetime of all input files and all files #included by them
-#define VL_Needs_C_Rebuild(out, in, ...) VL_Needs_C_Rebuild_Impl(out, ((const char*[]){in, __VA_ARGS__}), sizeof((const char*[]){in, __VA_ARGS__})/sizeof(const char*))
-VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input_paths, size_t input_paths_count);
-
 // 0 is default so if none is chosen, use the current compiler
 typedef enum {
 #if COMPILER_GCC
@@ -460,6 +456,11 @@ if(!VL_CCompile(&cmd, &ctx)) {
 VLIBPROC bool VL_CCompile_Opt(vl_compile_ctx *ctx, vl_cmd_opts opt);
 #define VL_CCompile(Cmd, ctx, ...) \
     VL_CCompile_Opt((ctx), (vl_cmd_opts){.cmd = (Cmd), __VA_ARGS__})
+
+// Checks the filetime of all input files and all files #included by them
+VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx);
+
+VLIBPROC char *VL_GetFilePathFromCompileCtx(vl_compile_ctx *ctx);
 
 typedef enum {
     VL_INSTALL_MODE_RELEASE,
@@ -1345,42 +1346,83 @@ VLIBPROC int VL_NeedsRebuild_Impl(const char *output_path, const char **input_pa
     return 0;
 }
 
-VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input_paths, size_t input_paths_count)
+VLIBPROC char *VL_GetFilePathFromCompileCtx(vl_compile_ctx *ctx)
 {
-    vl_cmd cmd = {0};
+    char *output = temp_sprintf("%s/%s", ctx->outputDir, ctx->output);
+    AssertMsg(output || (ctx->type == Compile_Object),
+        "Output path must be specified unless compiling for object file output");
+#if OS_WINDOWS
+    if(ctx->type == Compile_Executable) {
+        output = temp_sprintf("%s.exe", output);
+    }
+#else
+    if(ctx->type == Compile_Executable) {}
+#endif
+    else if(ctx->type == Compile_Object) {
+        if(output) {
+            if(ctx->cc == CCompiler_MSVC) {
+                output = temp_sprintf("%s.obj", output);
+            } else {
+                output = temp_sprintf("%s.o", output);
+            }
+        }
+    } else if(ctx->type == Compile_DynamicLibrary) {
+        output = temp_sprintf("%s" VL_DLL_EXTENSION, output);
+    } else if(ctx->type == Compile_StaticLibrary) {
+        if(ctx->cc == CCompiler_MSVC) {
+            output = temp_sprintf("%s.obj", output);
+        } else {
+            output = temp_sprintf("%s.o", output);
+        }
+    }
+    return output;
+}
+
+VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
+{
 #if COMPILER_GCC
-    CmdAppend(&cmd, "gcc", "-MM");
+    CmdAppend(cmd, "gcc", "-MM");
 #elif COMPILER_CLANG
-    CmdAppend(&cmd, "clang", "-MM");
+    CmdAppend(cmd, "clang", "-MM");
 #elif COMPILER_CL
-    CmdAppend(&cmd, "cl", "/showIncludes", "/Zs", "/nologo");
+    CmdAppend(cmd, "cl", "/showIncludes", "/Zs", "/nologo");
 #else
     // unimplemented
     return -1;
 #endif
-    DaAppendMany(&cmd, input_paths, input_paths_count);
 
-    int needsRebuildSimple = VL_NeedsRebuild_Impl(output_path, input_paths, input_paths_count);
+    size_t iniMark = temp_save();
+
+    const char *output = VL_GetFilePathFromCompileCtx(ctx);
+
+    int needsRebuildSimple = VL_NeedsRebuild_Impl(output, ctx->sourceFiles.items, ctx->sourceFiles.count);
     if(needsRebuildSimple != 0) {
-      return needsRebuildSimple;
+        temp_rewind(iniMark);
+        return needsRebuildSimple;
+    }
+
+    DaAppendMany(cmd, ctx->sourceFiles.items, ctx->sourceFiles.count);
+    struct compiler_info_opts info = {
+        .cmd = cmd,
+        .cc = ctx->cc,
+    };
+    for(size_t i = 0; i < ctx->includePaths.count; i++) {
+        VL_ccIncludepath_Opt(info, ctx->includePaths.items[i]);
     }
 
     int result = 0;
-
     vl_fd read;
     vl_fd write;
-    bool ok = VL_Pipe(&read, &write);
-    if(!ok) {
+    if(!VL_Pipe(&read, &write)) {
         VL_Log(VL_ERROR, "Could not create pipe for VL_Needs_C_Rebuild");
+        temp_rewind(iniMark);
         return -1;
     }
 
-    vl_proc proc = VL_CmdStartProcess(cmd, 0, &write, 0, false);
+    vl_proc proc = VL_CmdStartProcess(*cmd, 0, &write, 0, false);
     VL_FileClose(write);
 
     char *abuf = (char*)ArenaTemp.base + ArenaTemp.used;
-
-    size_t iniMark = temp_save();
 
     char buf[2048];
     for(;;) {
@@ -1420,8 +1462,9 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
             view inc = ViewChopByDelim(&line, ' ');
             if(inc.items[0] == '\\') {
                 /* Skip '\n' and ' ' after '\n' */
-                line.items += 2;
-                line.count -= 2;
+                line = ViewChopByLine(&data);
+                line.items++;
+                line.count--;
                 continue;
             }
 
@@ -1461,7 +1504,7 @@ VLIBPROC int VL_Needs_C_Rebuild_Impl(const char *output_path, const char **input
 #endif
 
     uint64_t outputFileTime;
-    if(!GetLastWriteTime(output_path, &outputFileTime)) return 1;
+    if(!GetLastWriteTime(output, &outputFileTime)) return 1;
 
     char path[VL_PATH_MAX+1];
     for(size_t i = 0; i < countIncludes; i++) {
@@ -1793,35 +1836,7 @@ VLIBPROC bool VL_CCompile_Opt(vl_compile_ctx *ctx, vl_cmd_opts opt)
     if(!ctx->outputDir) {
         ctx->outputDir = ".";
     }
-    const char *output = temp_sprintf("%s/%s", ctx->outputDir, ctx->output);
-    AssertMsg(output || (ctx->type == Compile_Object),
-        "Output path must be specified unless compiling for object file output");
-
-#if OS_WINDOWS
-    if(ctx->type == Compile_Executable) {
-        output = temp_sprintf("%s.exe", output);
-    }
-#else
-    if(ctx->type == Compile_Executable) {}
-#endif
-    else if(ctx->type == Compile_Object) {
-        if(output) {
-            if(ctx->cc == CCompiler_MSVC) {
-                output = temp_sprintf("%s.obj", output);
-            } else {
-                output = temp_sprintf("%s.o", output);
-            }
-        }
-    } else if(ctx->type == Compile_DynamicLibrary) {
-        output = temp_sprintf("%s" VL_DLL_EXTENSION, output);
-    } else if(ctx->type == Compile_StaticLibrary) {
-        if(ctx->cc == CCompiler_MSVC) {
-            output = temp_sprintf("%s.obj", output);
-        } else {
-            output = temp_sprintf("%s.o", output);
-        }
-    }
-
+    const char *output = VL_GetFilePathFromCompileCtx(ctx);
     VL_cc_Opt(info);
 
     // compile only, don't link
