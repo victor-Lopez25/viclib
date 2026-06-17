@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.6.3
+--version: 1.7.0
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -279,6 +279,22 @@ extern void __cdecl __debugbreak(void);
 # endif
 #endif
 
+#if !defined(__cplusplus)
+# if __STDC_VERSION__ >= 202311L
+#  define StaticAssert(expr, msg) static_assert(expr, msg)
+# elif __STDC_VERSION__ >= 201112L
+#  define StaticAssert(expr, msg) _Static_assert(expr, msg)
+# else
+#  define StaticAssert(expr, msg) \
+  do { \
+    char glue(__ignore__, __LINE__)[(expr)?1:-1]; \
+    (void)glue(__ignore__, __LINE__); \
+  } while(0)
+#endif
+#else
+# define StaticAssert(expr, msg) static_assert(expr, msg)
+#endif
+
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -362,7 +378,7 @@ thread_local error_number_value VL_ErrorNumber = 0;
 #endif
 
 /* bool found = false; 
- * LinearSearch(string_view_array, string_view, view_Eq);
+ * LinearSearch(string_view_array, string_view, ViewEq);
  * if(found) {...}
  * 
  * string_view_array must have count and items attributes
@@ -508,7 +524,6 @@ VIEWPROC bool ViewFindCharacter(view v, char c, size_t *n);
  * - The part before the character in chopped (optional)
  **/
 VIEWPROC bool ViewFindChopCharacter(view *v, char c, view *chopped);
-#define ViewEndWith ViewEndsWith /* in case of singular/plural annoyance */
 /* checks if 'v' ends with 'end' */
 VIEWPROC bool ViewEndsWith(view v, view end);
 /* chops view v by delimiter delim
@@ -674,8 +689,63 @@ ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **Spli
 # define temp_strndup(s, n) Arena_strndup(&ArenaTemp, s, n)
 # define temp_save() ArenaTemp.used
 # define temp_rewind(checkpoint) ArenaTemp.used = checkpoint;
-
 #endif
+
+////////////////////////////////
+// Exponential array (xar). See: https://azmr.uk/bsc25/
+
+/*
+ * Be minimally careful with the size of an exp_array, as e.g. 18 ptrs means 160Bytes, 30 ptrs means 256Bytes
+ * This is definitely not huge but you also can't just have an unbounded amount of them
+ * This is just a suggestion, this will be almost 128M items with shift = 8 (you might also want a greater shift instead)
+ *
+ * This is the partial sum formula in case you want to calculate the max amount of items:
+ * Sum[0..n](2^(x + k)) = 2^k * (-1 + 2^(1 + n))
+ * with x being the number that goes from 0 to n
+ *      k being the initial shift for the exp_array
+ *      n being the maximum chunk count
+ */
+#define VICLIB_EXP_ARRAY_CHUNK_COUNT 18
+/* This is a suggestion.
+ * I usually use this shift to avoid doing a bunch of allocations at the start
+ * and because I use Exponential arrays for huge lists
+ */
+#define VICLIB_EXP_ARRAY_CHUNK_SHIFT 8
+
+typedef struct {
+  uint8_t  shift;
+  uint8_t  chunkCount;
+  // I might add something useful here...
+  uint16_t reserved;
+  uint32_t elementSize;
+} exp_array_meta;
+
+typedef struct {
+  size_t n;
+} exp_array_hdr;
+
+#define exp_array(type, chunkCount) \
+  struct { \
+    exp_array_meta meta; \
+    exp_array_hdr hdr; \
+    type *chunks[chunkCount]; \
+  }
+
+#define ExpArrayDef(type, chunkCount, name) typedef exp_array(type, chunkCount) name
+
+#define ExpArrayInit(exp, Shift) \
+  do { \
+    StaticAssert((Shift) > 1 && (Shift) < 20, "shift should be at least 1 and at most 20 (it doesn't make sense to make it more)"); \
+    (exp).meta.shift = (Shift); \
+    (exp).meta.chunkCount = ArrayLen((exp).chunks); \
+    (exp).meta.elementSize = sizeof((exp).chunks[0][0]); \
+  } while(0)
+
+#define ExpArrayGet(exp, idx) ExpArrayGet_Generic(&(exp)->hdr, (exp)->meta, idx)
+VLIBPROC void *ExpArrayGet_Generic(exp_array_hdr const *xar, exp_array_meta meta, size_t idx);
+
+#define ExpArrayAppend(arena, exp, item) ExpArrayAppend_Generic((arena), &(exp)->hdr, (exp)->meta, &(item))
+VLIBPROC void *ExpArrayAppend_Generic(memory_arena *arena, exp_array_hdr *xar, exp_array_meta meta, void *data);
 
 ////////////////////////////////
 
@@ -1549,6 +1619,54 @@ ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem)
 
 ////////////////////////////////
 
+VLIBPROC void *ExpArrayGet_Generic(exp_array_hdr const *xar, exp_array_meta meta, size_t idx)
+{
+    uint8_t **chunks = (uint8_t**)(xar+1);
+
+    size_t chunkIdx = idx;
+    size_t chunkCapacity = 1ULL << meta.shift;
+    uint8_t chunksIdx = 0;
+
+    size_t idxShift = idx >> meta.shift;
+    if(idxShift > 0) {
+        chunksIdx = (uint8_t)CountLeadingZerosU64(idxShift);
+        chunkCapacity = 1ULL << (chunksIdx + meta.shift);
+        chunkIdx -= chunkCapacity;
+        chunksIdx += 1;
+    }
+
+    return chunks[chunksIdx] + chunkIdx * meta.elementSize;
+}
+
+VLIBPROC void *ExpArrayAppend_Generic(memory_arena *arena, exp_array_hdr *xar, exp_array_meta meta, void *data)
+{
+    uint8_t **chunks = (uint8_t**)(xar+1);
+
+    size_t chunkIdx = xar->n;
+    size_t chunkCapacity = 1ULL << meta.shift;
+    uint8_t chunksIdx = 0;
+
+    size_t idxShift = xar->n >> meta.shift;
+    if(idxShift > 0) {
+        chunksIdx = (uint8_t)CountLeadingZerosU64(idxShift);
+        chunkCapacity = 1ULL << (chunksIdx + meta.shift);
+        chunkIdx -= chunkCapacity;
+        chunksIdx += 1;
+    }
+
+    if(chunks[chunksIdx] == 0) {
+        chunks[chunksIdx] = ArenaPushSize(arena, chunkCapacity * meta.elementSize);
+    }
+
+    xar->n++;
+
+    void *result = chunks[chunksIdx] + chunkIdx * meta.elementSize;
+    mem_copy_non_overlapping(result, data, meta.elementSize);
+    return result;
+}
+
+////////////////////////////////
+
 struct vl_globalcontext VL_globalContext = {0};
 
 VLIBPROC bool VL_Init(void)
@@ -1842,10 +1960,11 @@ bool IsDebuggerPresent(void)
         return false;
     
     for(const char* characterPtr = tracer_pid_ptr + sizeof(tracerPidString) - 1; characterPtr <= buf + num_read; ++characterPtr) {
-        if (isspace(*characterPtr))
+        if (is_space(*characterPtr))
             continue;
         else
-            return isdigit(*characterPtr) != 0 && *characterPtr != '0';
+            // Do not include '0'
+            return *characterPtr > '0' && *characterPtr <= '9';
     }
 
     return false;

@@ -1,5 +1,5 @@
 // [vl_build.h](https://github.com/victor-Lopez25/viclib) © 2025 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-// version: 1.5.2
+// version: 1.5.3
 #ifndef VL_BUILD_H
 #define VL_BUILD_H
 
@@ -183,10 +183,10 @@ VLIBPROC bool SbPadAlign(string_builder *sb, size_t size);
 #define SbAppendBuf(sb, buf, size) DaAppendMany(sb, buf, size)
 // does not include null character
 #define SbAppendCstr(sb, cstr)  \
-    do {                         \
-        const char *s = (cstr);  \
-        size_t n = strlen(s);    \
-        DaAppendMany(sb, s, n); \
+    do {                        \
+        const char *s = (cstr); \
+        size_t n##_##__LINE__ = strlen(s);   \
+        DaAppendMany(sb, s, n##_##__LINE__); \
     } while (0)
 
 #define SbAppendNull(sb) DaAppend(sb, 0)
@@ -2284,7 +2284,7 @@ VLIBPROC void VL__GoRebuildUrself(int argc, char **argv, const char **src_paths,
 #ifdef _WIN32
     // On Windows executables almost always invoked without extension, so
     // it's ./nob, not ./nob.exe. For renaming the extension is a must.
-    if(!ViewEndWith(ViewFromCstr(bin_path), VIEW_STATIC(".exe"))) {
+    if(!ViewEndsWith(ViewFromCstr(bin_path), VIEW_STATIC(".exe"))) {
         bin_path = temp_sprintf("%s.exe", bin_path);
     }
 #endif
