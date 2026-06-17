@@ -8,6 +8,7 @@ Header-only library which does some basic stuff you might want in a lot of progr
  - Some intrinsics
  - String view implementation (View* functions)
  - Simple memory functions (mem_copy, mem_zero, mem_compare)
+ - Exponential array (xar). See https://azmr.uk/bsc25
  - Some file operations (filetime, read/write entirefile, getfiletype)
  - Sort() which performs an introsort
 
@@ -152,7 +153,7 @@ VL_ObjectBegin(&ctx);
     VL_ArrayBegin(&ctx, "stringval");
       char *s;
       view v;
-      VL_SerializeOpString(&ctx, &s); // returns a strdup
+      VL_SerializeOpString(&ctx, &s); // returns a duplicate of the string (allocates)
       VL_SerializeOpView(&ctx, &v); // returns a slice
     VL_ArrayEnd(&ctx);
   }
