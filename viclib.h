@@ -1827,8 +1827,9 @@ VLIBPROC bool VL_FileRead(vl_fd fd, void *bytes, uint32_t bytesSize, uint32_t *b
 
 #elif OS_LINUX || OS_MAC
     size_t toRead = min((size_t)bytesSize, LINUX_MAX_FILE_READ_WRITE);
-    *bytesRead = (uint32_t)read(fd, bytes, toRead);
-    return bytes > 0;
+    ssize_t signedBytesRead = read(fd, bytes, toRead);
+    *bytesRead = (uint32_t)signedBytesRead;
+    return signedBytesRead > 0;
 #else
     // unimplemented
     return false;

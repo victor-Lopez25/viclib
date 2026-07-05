@@ -1457,6 +1457,7 @@ VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
     includes = (view*)(ArenaTemp.base + ArenaTemp.used + ArenaGetAlignmentOffset(&ArenaTemp, sizeof(view)));
 
     ViewIterateLines(&data, lineIdx, line) {
+        (void)lineIdx;
         // NOTE: "file.o: "
         ViewChopByView(&line, VIEW(": "));
         // NOTE: "file.c"
@@ -1490,6 +1491,7 @@ VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
     includes = (view*)(ArenaTemp.base + ArenaTemp.used + ArenaGetAlignmentOffset(&ArenaTemp, sizeof(view)));
 
     ViewIterateLines(&data, lineIdx, line) {
+        (void)lineIdx;
         if(ViewChopStartsWith(&line, VIEW("Note: including file: "))) {
             if(ArenaTemp.used + sizeof(view) >= ArenaTemp.size) {
                 VL_Log(VL_ERROR, "No memory left in VL_Needs_C_Rebuild");
