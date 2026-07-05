@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.7.0
+--version: 1.7.1
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -69,6 +69,10 @@ SOFTWARE.
 #ifndef VICLIB_H
 #define VICLIB_H
 
+#if !defined(_WIN32) && !defined(_GNU_SOURCE) 
+# define _GNU_SOURCE
+#endif
+
 #if defined(_WIN32)
 # define OS_WINDOWS 1
 #endif
@@ -128,9 +132,6 @@ SOFTWARE.
 # define __PROC__ __FUNCTION__
 #endif
 
-#if defined(_UNISTD_H_) && defined(_SYS_STAT_H_)
-# define VL_FILE_LINUX
-#endif
 #if !defined(VL_INC_STDLIB_H) && (defined(_STDLIB_H_) || defined(_STDLIB_H) || defined(_INC_STDLIB))
 # define VL_INC_STDLIB_H
 #endif
@@ -1826,8 +1827,7 @@ VLIBPROC bool VL_FileRead(vl_fd fd, void *bytes, uint32_t bytesSize, uint32_t *b
 
 #elif OS_LINUX || OS_MAC
     size_t toRead = min((size_t)bytesSize, LINUX_MAX_FILE_READ_WRITE);
-    ssize_t bytes = read(fd, bytes, toRead);
-    *bytesRead = (uint32_t)bytes;
+    *bytesRead = (uint32_t)read(fd, bytes, toRead);
     return bytes > 0;
 #else
     // unimplemented

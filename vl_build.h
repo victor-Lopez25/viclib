@@ -1,7 +1,11 @@
 // [vl_build.h](https://github.com/victor-Lopez25/viclib) © 2025 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-// version: 1.5.3
+// version: 1.5.4
 #ifndef VL_BUILD_H
 #define VL_BUILD_H
+
+#if !defined(_WIN32) && !defined(_GNU_SOURCE) 
+# define _GNU_SOURCE
+#endif
 
 // Huge TODO: Try to do this without stdlib.h?
 #include <stdlib.h>
