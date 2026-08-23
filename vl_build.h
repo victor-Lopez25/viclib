@@ -1,7 +1,11 @@
 // [vl_build.h](https://github.com/victor-Lopez25/viclib) © 2025 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-// version: 1.5.2
+// version: 1.5.5
 #ifndef VL_BUILD_H
 #define VL_BUILD_H
+
+#if !defined(_WIN32) && !defined(_GNU_SOURCE) 
+# define _GNU_SOURCE
+#endif
 
 // Huge TODO: Try to do this without stdlib.h?
 #include <stdlib.h>
@@ -1431,6 +1435,7 @@ VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
     includes = (view*)(ArenaTemp.base + ArenaTemp.used + ArenaGetAlignmentOffset(&ArenaTemp, sizeof(view)));
 
     ViewIterateLines(&data, lineIdx, line) {
+        (void)lineIdx;
         // NOTE: "file.o: "
         ViewChopByView(&line, VIEW(": "));
         // NOTE: "file.c"
@@ -1464,6 +1469,7 @@ VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
     includes = (view*)(ArenaTemp.base + ArenaTemp.used + ArenaGetAlignmentOffset(&ArenaTemp, sizeof(view)));
 
     ViewIterateLines(&data, lineIdx, line) {
+        (void)lineIdx;
         if(ViewChopStartsWith(&line, VIEW("Note: including file: "))) {
             if(ArenaTemp.used + sizeof(view) >= ArenaTemp.size) {
                 VL_Log(VL_ERROR, "No memory left in VL_Needs_C_Rebuild");
