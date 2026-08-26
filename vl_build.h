@@ -1,5 +1,5 @@
 // [vl_build.h](https://github.com/victor-Lopez25/viclib) © 2025 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-// version: 1.5.5
+// version: 1.5.6
 #ifndef VL_BUILD_H
 #define VL_BUILD_H
 
@@ -114,8 +114,14 @@ struct VL_CopyDirectoryRecursively_opts {
 
 VLIBPROC bool MkdirIfNotExist(const char *path);
 VLIBPROC bool VL_CopyFile(const char *src, const char *dst);
+#ifdef __cplusplus
+/* CopyDirectoryRecursively(src, dst, ext) or (src) or (src, dst) */
+#define VL_CopyDirectoryRecursively(src_path, ...) \
+    VL_CopyDirectoryRecursively_Opt(VL_CopyDirectoryRecursively_opts{(src_path, __VA_ARGS__)})
+#else
 #define VL_CopyDirectoryRecursively(src_path, ...) \
     VL_CopyDirectoryRecursively_Opt((struct VL_CopyDirectoryRecursively_opts){.src = (src_path), __VA_ARGS__})
+#endif
 VLIBPROC bool VL_CopyDirectoryRecursively_Impl(const char *src_path, const char *dst_path, const char *ext);
 VLIBPROC bool VL_CopyDirectoryRecursively_Opt(struct VL_CopyDirectoryRecursively_opts opt);
 VLIBPROC bool VL_ReadDirectoryFilesRecursively(const char *parent, vl_file_paths *children);
@@ -241,6 +247,19 @@ typedef struct {
 VLIBPROC void VL_CmdRender(vl_cmd cmd, string_builder *render);
 
 VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt);
+
+#ifdef __cplusplus
+/* '/dev/null' on windows will be automatically changed to 'NUL' and vice versa */
+#define CmdRun(Cmd, ...) CmdRun_Opt(vl_cmd_opts{(Cmd), __VA_ARGS__})
+
+template<typename... Args>
+static inline void VL_CppWrapper_CmdAppend(vl_cmd *cmd, Args... strs)
+{
+    const char *args[] = { strs... };
+    DaAppendMany(cmd, args, sizeof(args)/sizeof(args[0]));
+}
+#define CmdAppend(cmd, ...) VL_CppWrapper_CmdAppend(cmd, __VA_ARGS__)
+#else
 /* '/dev/null' on windows will be automatically changed to 'NUL' and vice versa */
 #define CmdRun(Cmd, ...) CmdRun_Opt((vl_cmd_opts){.cmd = (Cmd), __VA_ARGS__})
 
@@ -248,6 +267,7 @@ VLIBPROC bool CmdRun_Opt(vl_cmd_opts opt);
     DaAppendMany(cmd, \
                   ((const char*[]){__VA_ARGS__}), \
                   (sizeof((const char*[]){__VA_ARGS__})/sizeof(const char*)))
+#endif
 
 #define CmdExtend(cmd, other_cmd) \
     DaAppendMany(cmd, (other_cmd)->items, (other_cmd)->count)
@@ -575,7 +595,18 @@ bool Install_SDL3(vl_cmd *cmd, vl_install_info *info);
 
 // stolen from nob.h, made it better (imo)
 VLIBPROC void VL__GoRebuildUrself(int argc, char **argv, const char **src_paths, size_t path_count);
+
+#ifdef __cplusplus
+template<typename... Args>
+static inline void VL_CppWrapper_GoRebuildUrself(int argc, char **argv, Args... sourceFiles)
+{
+    const char *src[] = { sourceFiles... };
+    VL__GoRebuildUrself(argc, argv, src, sizeof(src)/sizeof(src[0]));
+}
+#define VL_GO_REBUILD_URSELF(argc, argv, ...) VL_CppWrapper_GoRebuildUrself(argc, argv, __FILE__, __VA_ARGS__)
+#else
 #define VL_GO_REBUILD_URSELF(argc, argv, ...) VL__GoRebuildUrself(argc, argv, ((const char*[]){__FILE__, __VA_ARGS__}), sizeof((const char*[]){__FILE__, __VA_ARGS__})/sizeof(const char*))
+#endif
 
 #if OS_WINDOWS
 VLIBPROC char *Win32_ErrorMessage(DWORD err);
@@ -1259,7 +1290,7 @@ VLIBPROC char *temp_sprintf(const char *fmt, ...)
     va_end(args);
 
     Assert(n >= 0);
-    char *result = (char*)ArenaPushSize(&ArenaTemp, n + 1, .Alignment = 1);
+    char *result = (char*)ArenaPushSize(&ArenaTemp, (size_t)(n + 1), .Alignment = 1);
     va_start(args, fmt);
     vsnprintf(result, n + 1, fmt, args);
     va_end(args);
@@ -1362,6 +1393,9 @@ VLIBPROC char *VL_GetFilePathFromCompileCtx(vl_compile_ctx *ctx)
 
 VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
 {
+    view *includes;
+    size_t callMemSize;
+    size_t countIncludes = 0;
 #if COMPILER_GCC
     CmdAppend(cmd, "gcc", "-MM");
 #elif COMPILER_CLANG
@@ -1421,9 +1455,7 @@ VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
         ArenaTemp.used += bytesRead;
     }
 
-    size_t callMemSize = ArenaTemp.used - iniMark;
-    view *includes;
-    size_t countIncludes = 0;
+    callMemSize = ArenaTemp.used - iniMark;
 
 #if COMPILER_GCC || COMPILER_CLANG
     // NOTE: Full format:
@@ -1494,7 +1526,7 @@ VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
     for(size_t i = 0; i < countIncludes; i++) {
         view inc = includes[i];
         if(inc.count > VL_PATH_MAX) {
-            VL_Log(VL_WARNING, "Ignoring file '"VIEW_FMT"' because its path is longer than max path",
+            VL_Log(VL_WARNING, "Ignoring file '" VIEW_FMT "' because its path is longer than max path",
                    VIEW_ARG(inc));
             continue;
         }
@@ -1606,8 +1638,8 @@ VLIBPROC char *VL_temp_DirName(const char *path)
     return temp_strndup(path, i + 1);
 #else
     if(!path) path = ""; // Treating NULL as empty.
-    char *drive = temp_alloc(_MAX_DRIVE, .Alignment = 1);
-    char *dir   = temp_alloc(_MAX_DIR, .Alignment = 1);
+    char *drive = (char*)temp_alloc(_MAX_DRIVE, .Alignment = 1);
+    char *dir   = (char*)temp_alloc(_MAX_DIR, .Alignment = 1);
     // https://learn.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-2010/8e46eyt7(v=vs.100)
     errno_t ret = _splitpath_s(path, drive, _MAX_DRIVE, dir, _MAX_DIR, NULL, 0, NULL, 0);
     Assert(ret == 0);
@@ -1629,8 +1661,8 @@ VLIBPROC char *VL_temp_FileName(const char *path)
     return s+i;
 #else
     if(!path) path = ""; // Treating NULL as empty.
-    char *fname = temp_alloc(_MAX_FNAME, .Alignment = 1);
-    char *ext = temp_alloc(_MAX_EXT, .Alignment = 1);
+    char *fname = (char*)temp_alloc(_MAX_FNAME, .Alignment = 1);
+    char *ext = (char*)temp_alloc(_MAX_EXT, .Alignment = 1);
     // https://learn.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-2010/8e46eyt7(v=vs.100)
     errno_t ret = _splitpath_s(path, NULL, 0, NULL, 0, fname, _MAX_FNAME, ext, _MAX_EXT);
     Assert(ret == 0);
@@ -1644,7 +1676,7 @@ VLIBPROC char *VL_temp_FileExt(const char *path)
     return strrchr(VL_temp_FileName(path), '.');
 #else
     if(!path) path = ""; // Treating NULL as empty.
-    char *ext = temp_alloc(_MAX_EXT, .Alignment = 1);
+    char *ext = (char*)temp_alloc(_MAX_EXT, .Alignment = 1);
     // https://learn.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-2010/8e46eyt7(v=vs.100)
     errno_t ret = _splitpath_s(path, NULL, 0, NULL, 0, NULL, 0, ext, _MAX_EXT);
     Assert(ret == 0);
@@ -1936,8 +1968,10 @@ bool Install_SDL3(vl_cmd *cmd, vl_install_info *info)
     const char *cmakeOutDir;
     const char *cmakeGenerator;
     const char *sdlLibName;
+    const char *newDllPath;
 #if OS_WINDOWS
     const char *sdlDllName = "SDL3.dll";
+    const char *sdlLibNewPath;
 #else
     (void)sdlLibName; (void)cmakeOutDir;
     const char *sdlDllName = "libSDL3" VL_DLL_EXTENSION;
@@ -2029,7 +2063,7 @@ bool Install_SDL3(vl_cmd *cmd, vl_install_info *info)
     }
 
     cmakeOutDir = temp_sprintf("%s/%s", directoryOut, modeStr);
-    const char *newDllPath = temp_sprintf("../dynamic_libs/%s", sdlDllName);
+    newDllPath = temp_sprintf("../dynamic_libs/%s", sdlDllName);
     if(!VL_FileExists(newDllPath)) {
 #if OS_WINDOWS
         if(info->cc == CCompiler_MSVC) {
@@ -2079,7 +2113,7 @@ bool Install_SDL3(vl_cmd *cmd, vl_install_info *info)
     }
 
 #if OS_WINDOWS
-    const char *sdlLibNewPath = temp_sprintf("../lib/%s", sdlLibName);
+    sdlLibNewPath = temp_sprintf("../lib/%s", sdlLibName);
     if(!VL_FileExists(sdlLibNewPath)) {
         MkdirIfNotExist("../lib");
         const char *oldPath;

@@ -1,5 +1,5 @@
 // [vl_serialize.h](https://github.com/victor-Lopez25/viclib) © 2026 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0)
-// version: 1.3.0
+// version: 1.3.1
 #ifndef VL_SERIALIZE_H
 #define VL_SERIALIZE_H
 
@@ -155,13 +155,22 @@ struct VL_ArrayBegin_opts {
 /* returns a slice to data in val */
 #define VL_SerializeOpView(serialize_ctx, val) ((serialize_ctx)->SerializeOpView(serialize_ctx, val))
 
-#define GetSerializeContext(Type, ...) \
-    GetSerializeContext_Impl((GetSerializeContext_opts){.type = Type, __VA_ARGS__})
 SERIALIZE_PROC vl_serialize_context GetSerializeContext_Impl(GetSerializeContext_opts opt);
+SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeContext_opts opt);
+
+#ifdef __cplusplus
+#define GetSerializeContext(Type, ...) \
+    GetSerializeContext_Impl(GetSerializeContext_opts{(Type), __VA_ARGS__})
 
 #define GetDeserializeContext(Type, ...) \
-    GetDeserializeContext_Impl((GetDeserializeContext_opts){.type = Type, __VA_ARGS__})
-SERIALIZE_PROC vl_serialize_context GetDeserializeContext_Impl(GetDeserializeContext_opts opt);
+    GetDeserializeContext_Impl(GetDeserializeContext_opts{(Type), __VA_ARGS__})
+#else
+#define GetSerializeContext(Type, ...) \
+    GetSerializeContext_Impl((GetSerializeContext_opts){.type = (Type), __VA_ARGS__})
+
+#define GetDeserializeContext(Type, ...) \
+    GetDeserializeContext_Impl((GetDeserializeContext_opts){.type = (Type), __VA_ARGS__})
+#endif
 
 /* clear the memory used to reuse it for some other serialization/deserialization */
 SERIALIZE_PROC void VL_SerializeClear(vl_serialize_context *ctx);

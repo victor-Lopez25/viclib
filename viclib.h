@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.7.1
+--version: 1.7.2
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -327,22 +327,28 @@ typedef double   f64;
 # define S64_Fmt "%ld"
 #endif
 
+#if defined(__cplusplus)
+# define VL_CLITERAL(type) type
+#else
+# define VL_CLITERAL(type) (type)
+#endif
+
 // TODO: Print for different platforms...?
 
 #if !defined(AssertAlways) || !defined(AssertMsgAlways)
 # if defined(SDL_h_)
 #  define AssertAlways(e) do{ if(!(e)){ \
-        SDL_Log(__FILE__"("stringify(__LINE__)"): Assert fail: "#e "\n"); \
+        SDL_Log(__FILE__ "(" stringify(__LINE__) "): Assert fail: " #e "\n"); \
         DebugBreakpoint; } }while(0)
 #  define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
-        SDL_Log(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
+        SDL_Log(__FILE__ "(" stringify(__LINE__) "): " msglit "\n"); \
         DebugBreakpoint; } }while(0)
 # elif defined(VL_INC_STDIO_H)
 #  define AssertAlways(e) do{ if(!(e)){ \
-        printf(__FILE__"("stringify(__LINE__)"): Assert fail: "#e "\n"); \
+        printf(__FILE__ "(" stringify(__LINE__) "): Assert fail: " #e "\n"); \
         fflush(stdout); DebugBreakpoint; } }while(0)
 #  define AssertMsgAlways(e, msglit) do{ if(!(e)){ \
-        printf(__FILE__"("stringify(__LINE__)"): " msglit "\n"); \
+        printf(__FILE__ "(" stringify(__LINE__) "): " msglit "\n"); \
         fflush(stdout); DebugBreakpoint; } }while(0)
 # else
 #  if !defined(QUIET_ASSERT)
@@ -377,7 +383,7 @@ typedef enum {
     ERROR_READ_FILE_TOO_BIG, /* READ_ENTIRE_FILE_MAX exceeded */
 } error_number_value;
 
-thread_local error_number_value VL_ErrorNumber = 0;
+thread_local error_number_value VL_ErrorNumber = ERROR_NO_ERROR;
 
 #ifndef VLIBPROC
 # define VLIBPROC
@@ -636,20 +642,20 @@ typedef struct {
 # define ARENAPROC VLIBPROC
 #endif
 
-struct ArenaGetRemaining_opts {
+typedef struct {
     memory_arena *Arena;
     size_t Alignment;
-};
-struct ArenaPushSize_opts {
+} ArenaGetRemaining_opts;
+typedef struct {
     memory_arena *Arena;
     size_t RequestSize;
     size_t Alignment;
-};
-struct ArenaSplit_opts {
+} ArenaPushSize_opts;
+typedef struct {
     memory_arena *Arena;
     memory_arena *SplitArena;
     size_t SplitSize;
-};
+} ArenaSplit_opts;
 
 #if !defined(VICLIB_NO_TEMP_ARENA)
 extern memory_arena ArenaTemp;
@@ -657,10 +663,14 @@ extern memory_arena ArenaTemp;
 
 // NOTE: Thanks Vjekoslav for the idea! (https://twitter.com/vkrajacic/status/1749816169736073295)
 
-#define ArenaGetRemaining(arena, ...) ArenaGetRemaining_Opt((struct ArenaGetRemaining_opts){.Arena = (arena), __VA_ARGS__})
-#define ArenaPushSize(arena, size, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = (arena), .RequestSize = (size), __VA_ARGS__})
-#define PushStruct(arena, type, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = (arena), .RequestSize = sizeof(type), __VA_ARGS__})
-#define PushArray(arena, count, type, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = (arena), .RequestSize = (count)*sizeof(type), __VA_ARGS__})
+#define ArenaGetRemaining(arena, ...) ArenaGetRemaining_Opt( \
+    VL_CLITERAL(ArenaGetRemaining_opts){.Arena = (arena), __VA_ARGS__})
+#define ArenaPushSize(arena, size, ...) ArenaPushSize_Opt( \
+    VL_CLITERAL(ArenaPushSize_opts){.Arena = (arena), .RequestSize = (size), __VA_ARGS__})
+#define PushStruct(arena, type, ...) ArenaPushSize_Opt( \
+    VL_CLITERAL(ArenaPushSize_opts){.Arena = (arena), .RequestSize = sizeof(type), __VA_ARGS__})
+#define PushArray(arena, count, type, ...) ArenaPushSize_Opt( \
+    VL_CLITERAL(ArenaPushSize_opts){.Arena = (arena), .RequestSize = (count)*sizeof(type), __VA_ARGS__})
 #define ArenaClear(arena, ZeroMem) do{ \
         if(ZeroMem) { mem_zero((arena)->base, (arena)->size); } \
         (arena)->used = 0; \
@@ -673,7 +683,7 @@ ARENAPROC char *Arena_strdup(memory_arena *Arena, const char *s);
  * When you call ArenaSplit, it will remove the size requested from the original at (Base + Size - SplitSize)
  * Calling ArenaSplit without SplitSize will split the arena into two equal parts (*they could be different sizes due to alignment)
 **/
-#define ArenaSplit(arena, split, ...) ArenaSplit_Opt((struct ArenaSplit_opts){.Arena = (arena), .SplitArena = (split), __VA_ARGS__})
+#define ArenaSplit(arena, split, ...) ArenaSplit_Opt(VL_CLITERAL(ArenaSplit_opts){.Arena = (arena), .SplitArena = (split), __VA_ARGS__})
 // Split an arena into multiple equal parts
 #define ArenaSplitMultiple(arena, split, ...) ArenaSplitMultiple_Impl((arena), \
     (memory_arena*[]){(split), __VA_ARGS__}, sizeof((memory_arena*[]){(split), __VA_ARGS__})/sizeof(memory_arena*))
@@ -684,9 +694,9 @@ ARENAPROC scratch_arena ArenaBeginScratch(memory_arena *Arena);
 ARENAPROC void ArenaEndScratch(scratch_arena Scratch, bool ZeroMem);
 ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment);
 
-ARENAPROC size_t ArenaGetRemaining_Opt(struct ArenaGetRemaining_opts opt);
-ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt);
-ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt);
+ARENAPROC size_t ArenaGetRemaining_Opt(ArenaGetRemaining_opts opt);
+ARENAPROC void *ArenaPushSize_Opt(ArenaPushSize_opts opt);
+ARENAPROC void ArenaSplit_Opt(ArenaSplit_opts opt);
 ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena);
 ARENAPROC void ArenaSplitMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount);
 ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount);
@@ -694,7 +704,7 @@ ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **Spli
 #ifndef VICLIB_NO_TEMP_ARENA
 # define temp_reset() ArenaClear(&ArenaTemp, true)
 // will align to 4 bytes
-# define temp_alloc(size, ...) ArenaPushSize_Opt((struct ArenaPushSize_opts){.Arena = &ArenaTemp, .RequestSize = (size), __VA_ARGS__})
+# define temp_alloc(size, ...) ArenaPushSize_Opt(VL_CLITERAL(ArenaPushSize_opts){.Arena = &ArenaTemp, .RequestSize = (size), __VA_ARGS__})
 # define temp_strdup(s) Arena_strdup(&ArenaTemp, s)
 # define temp_strndup(s, n) Arena_strndup(&ArenaTemp, s, n)
 # define temp_save() ArenaTemp.used
@@ -1504,16 +1514,16 @@ VLIBPROC int mem_compare(const void *str1, const void *str2, size_t count)
 # endif // !defined(VICLIB_TEMP_SIZE)
 static u8 ViclibTempMem[VICLIB_TEMP_SIZE] = {0};
 memory_arena ArenaTemp = {
-    .size = VICLIB_TEMP_SIZE,
-    .base = ViclibTempMem,
-    .used = 0,
-    .scratchCount = 0,
+    /* .size = */ VICLIB_TEMP_SIZE,
+    /* .base = */ ViclibTempMem,
+    /* .used = */ 0,
+    /* .scratchCount = */ 0,
 };
 #endif // !defined(VICLIB_NO_TEMP_ARENA)
 
 ARENAPROC char *Arena_strndup(memory_arena *Arena, const char *s, size_t n)
 {
-    char *Result = ArenaPushSize(Arena, n + 1);
+    char *Result = (char*)ArenaPushSize(Arena, n + 1);
     mem_copy_non_overlapping(Result, s, n);
     Result[n] = '\0';
     return Result;
@@ -1544,14 +1554,14 @@ ARENAPROC size_t ArenaGetAlignmentOffset(memory_arena *Arena, size_t Alignment)
     return alignOffset;
 }
 
-ARENAPROC size_t ArenaGetRemaining_Opt(struct ArenaGetRemaining_opts opt)
+ARENAPROC size_t ArenaGetRemaining_Opt(ArenaGetRemaining_opts opt)
 {
     if(opt.Alignment < 1) opt.Alignment = 4;
     size_t Result = opt.Arena->size - (opt.Arena->used + ArenaGetAlignmentOffset(opt.Arena, opt.Alignment));
     return Result;
 }
 
-ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt)
+ARENAPROC void *ArenaPushSize_Opt(ArenaPushSize_opts opt)
 {
     if(opt.Alignment < 1) opt.Alignment = 4;
     size_t Size = opt.RequestSize;
@@ -1565,7 +1575,7 @@ ARENAPROC void *ArenaPushSize_Opt(struct ArenaPushSize_opts opt)
     return Mem;
 }
 
-ARENAPROC void ArenaSplit_Opt(struct ArenaSplit_opts opt)
+ARENAPROC void ArenaSplit_Opt(ArenaSplit_opts opt)
 {
     AssertMsg(opt.Arena->size > opt.SplitSize, "Need more memory in arena to split to requested size");
     if(opt.SplitSize == 0) opt.SplitSize = ArenaGetRemaining(opt.Arena, .Alignment = 1) / 2;
@@ -1596,7 +1606,7 @@ ARENAPROC void ArenaRejoin(memory_arena *Arena, memory_arena *SplitArena)
 ARENAPROC void ArenaSplitMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount)
 {
     size_t splitSize = ArenaGetRemaining(Arena, .Alignment = 1) / (SplitArenaCount + 1);
-    for(size_t splitIdx = 0; splitIdx < SplitArenaCount; splitIdx++) ArenaSplit(Arena, SplitArenas[splitIdx], splitSize);
+    for(size_t splitIdx = 0; splitIdx < SplitArenaCount; splitIdx++) ArenaSplit(Arena, SplitArenas[splitIdx], .SplitSize = splitSize);
 }
 
 ARENAPROC void ArenaRejoinMultiple_Impl(memory_arena *Arena, memory_arena **SplitArenas, size_t SplitArenaCount)
@@ -1665,7 +1675,7 @@ VLIBPROC void *ExpArrayAppend_Generic(memory_arena *arena, exp_array_hdr *xar, e
     }
 
     if(chunks[chunksIdx] == 0) {
-        chunks[chunksIdx] = ArenaPushSize(arena, chunkCapacity * meta.elementSize);
+        chunks[chunksIdx] = (uint8_t*)ArenaPushSize(arena, chunkCapacity * meta.elementSize);
     }
 
     xar->n++;
@@ -2089,7 +2099,7 @@ VLIBPROC char *ReadEntireFile(memory_arena *Arena, char *File, size_t *Size)
             VL_ErrorNumber = ERROR_NO_MEM;
             ok = false;
         } else {
-            result = ArenaPushSize(Arena, FileSize.QuadPart);
+            result = (char*)ArenaPushSize(Arena, (size_t)FileSize.QuadPart);
         }
     }
 
@@ -2157,7 +2167,7 @@ RESTORE_WARNINGS
 bool ReadFileChunk(vl_file_chunk *Chunk, const char *File, u32 *ChunkSize)
 {
     AssertMsg(Chunk->Buffer && Chunk->BufferSize, "Requires a valid buffer and a buffer size");
-    VL_ErrorNumber = 0;
+    VL_ErrorNumber = ERROR_NO_ERROR;
 
 #if OS_WINDOWS
     if(!Chunk->File) {
@@ -2250,6 +2260,10 @@ VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
 
 #if OS_WINDOWS
     HANDLE fhandle = INVALID_HANDLE_VALUE;
+    u8 *fData;
+    DWORD bytesToWriteTotal;
+    DWORD bytesWrittenTotal;
+    DWORD bytesWritten;
 
     fhandle = CreateFileA(File, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if(fhandle == INVALID_HANDLE_VALUE) {
@@ -2266,10 +2280,10 @@ VLIBPROC bool WriteEntireFile(const char *File, const void *Data, size_t Size)
     }
 
     Assert(Size < 0xFFFFFFFFULL);
-    u8 *fData = (u8*)Data;
-    DWORD bytesToWriteTotal = (DWORD)Size;
-    DWORD bytesWrittenTotal = 0;
-    DWORD bytesWritten = 0;
+    fData = (u8*)Data;
+    bytesToWriteTotal = (DWORD)Size;
+    bytesWrittenTotal = 0;
+    bytesWritten = 0;
     while(bytesToWriteTotal > bytesWrittenTotal) {
         if(!WriteFile(fhandle, fData, bytesToWriteTotal - bytesWrittenTotal, &bytesWritten, 0)) {
             VL_ErrorNumber = ERROR_WRITE_UNKNOWN;
