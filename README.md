@@ -2,6 +2,8 @@
 
 Header-only library which does some basic stuff you might want in a lot of programs
 
+Can be compiled as c++ too!
+
 ### viclib.h includes:
  - Assertions
  - Arena implementation
