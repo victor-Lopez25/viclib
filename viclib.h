@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.7.2
+--version: 1.7.3
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -771,7 +771,7 @@ VLIBPROC void *ExpArrayAppend_Generic(memory_arena *arena, exp_array_hdr *xar, e
 
 #ifdef RADDBG_MARKUP_H
 #if COMPILER_CL
-raddbg_type_view(view, array($.items, $.count));
+raddbg_type_view(view, text(array($.items, $.count)));
 
 #if defined(SDL_h_)
 raddbg_type_view(SDL_Surface, $.format == SDL_PixelFormat.SDL_PIXELFORMAT_RGBA32 ? 
