@@ -1,5 +1,5 @@
 // [vl_build.h](https://github.com/victor-Lopez25/viclib) © 2025 by [Víctor López Cortés](https://github.com/victor-Lopez25) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-// version: 1.5.6
+// version: 1.5.7
 #ifndef VL_BUILD_H
 #define VL_BUILD_H
 
@@ -75,7 +75,7 @@
         u64 glue(timer_, __LINE__) = VL_GetNanos(); \
         stmt;                                             \
         glue(timer_, __LINE__) = VL_GetNanos() - glue(timer_, __LINE__); \
-        VL_Log(VL_INFO, "%sTime taken: "PRINT_TIME_Fmt, msg, PRINT_TIME_Arg(glue(timer_, __LINE__))); \
+        VL_Log(VL_INFO, "%sTime taken: " PRINT_TIME_Fmt, msg, PRINT_TIME_Arg(glue(timer_, __LINE__))); \
     } while(0)
 
 /* Returns a struct initializer with items in the first element and count in the second */
@@ -1396,6 +1396,7 @@ VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
     view *includes;
     size_t callMemSize;
     size_t countIncludes = 0;
+    view data, line;
 #if COMPILER_GCC
     CmdAppend(cmd, "gcc", "-MM");
 #elif COMPILER_CLANG
@@ -1462,12 +1463,12 @@ VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
     // file1.o: file1.c <include list>
     // file2.o: file2.c <include list>
     // etc.
-    view data = ViewTrimRight(ViewFromParts(abuf, callMemSize));
+    data = ViewTrimRight(ViewFromParts(abuf, callMemSize));
 
     includes = (view*)(ArenaTemp.base + ArenaTemp.used + ArenaGetAlignmentOffset(&ArenaTemp, sizeof(view)));
 
-    ViewIterateLines(&data, lineIdx, line) {
-        (void)lineIdx;
+    line = ViewChopByLine(&data);
+    for(; data.count > 0 || line.count > 0; line = ViewChopByLine(&data)) {
         // NOTE: "file.o: "
         ViewChopByView(&line, VIEW(": "));
         // NOTE: "file.c"
@@ -1495,13 +1496,13 @@ VLIBPROC int VL_Needs_C_Rebuild(vl_cmd *cmd, vl_compile_ctx *ctx)
     }
 
 #elif COMPILER_CL
-    view data = ViewFromParts(abuf, callMemSize);
+    data = ViewFromParts(abuf, callMemSize);
     //printf(VIEW_FMT, VIEW_ARG(data));
 
     includes = (view*)(ArenaTemp.base + ArenaTemp.used + ArenaGetAlignmentOffset(&ArenaTemp, sizeof(view)));
 
-    ViewIterateLines(&data, lineIdx, line) {
-        (void)lineIdx;
+    line = ViewChopByLine(&data);
+    for(; data.count > 0 || line.count > 0; line = ViewChopByLine(&data)) {
         if(ViewChopStartsWith(&line, VIEW("Note: including file: "))) {
             if(ArenaTemp.used + sizeof(view) >= ArenaTemp.size) {
                 VL_Log(VL_ERROR, "No memory left in VL_Needs_C_Rebuild");
