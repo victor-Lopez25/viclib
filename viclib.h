@@ -1,6 +1,6 @@
 /* date = December 29th 2024 10:12 pm
 --Author: Víctor López Cortés
---version: 1.7.3
+--version: 1.7.4
 --Usage:
 Defines: To have any of these take effect, you must define them _before_ including this file
  - VICLIB_IMPLEMENTATION: If you want to have the implementation (only in one file)
@@ -247,7 +247,7 @@ extern void __cdecl __debugbreak(void);
 #endif
 
 // only works with static arrays!
-#define ArrayLen(arr) sizeof(arr)/sizeof(arr[0])
+#define ArrayLen(arr) (sizeof(arr)/sizeof(arr[0]))
 
 #if !defined(stringify)
 # define stringify_(a) #a
@@ -1518,6 +1518,7 @@ memory_arena ArenaTemp = {
     /* .base = */ ViclibTempMem,
     /* .used = */ 0,
     /* .scratchCount = */ 0,
+    /* .splitCount = */ 0,
 };
 #endif // !defined(VICLIB_NO_TEMP_ARENA)
 

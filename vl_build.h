@@ -3,7 +3,7 @@
 #ifndef VL_BUILD_H
 #define VL_BUILD_H
 
-#if !defined(_WIN32) && !defined(_GNU_SOURCE) 
+#if !defined(_WIN32) && !defined(_GNU_SOURCE)
 # define _GNU_SOURCE
 #endif
 
